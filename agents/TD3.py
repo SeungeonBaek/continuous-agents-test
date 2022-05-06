@@ -32,6 +32,7 @@ class Actor(Model):
 
         return mu
 
+
 class Critic(Model):
     def __init__(self):
         super(Critic,self).__init__()
@@ -52,6 +53,7 @@ class Critic(Model):
         value = self.value(l4)
 
         return value
+
 
 class Agent:
     """

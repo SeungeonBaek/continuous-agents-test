@@ -8,8 +8,8 @@ from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense
 
-import utils.replay_buffer as Memory
-
+from utils.replay_buffer import ExperienceMemory
+from utils.prioritized_memory_numpy import PrioritizedMemory
 
 class Actor(Model):
     def __init__(self, obs_size, act_size, name="Actor"):
@@ -69,7 +69,7 @@ class Agent:
         self.tau = hyper_param['tau']
         self.update_freq = hyper_param['update_freq']
 
-        self.replay_buffer = Memory.ExperienceMemory(2000000)
+        self.replay_buffer = ExperienceMemory(2000000)
         self.batch_size = hyper_param['batch_size']
         self.warm_up = hyper_param['warm_up']
         self.update_step = 0
