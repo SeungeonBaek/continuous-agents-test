@@ -41,10 +41,13 @@ class ExperienceMemory():
         
         return np.array(state), np.array(next_state), np.array(reward), np.array(action), np.array(done)
 
-        
-        # %%
+    def clear(self):
+        self.storage.clear()
+        self.next_idx = 0
+
+
 if __name__ == "__main__":
-    memory = ReplayBuffer(30000)
+    memory = ExperienceMemory(30000)
     print(memory._len())
     memory.add((1, 2, 3, [4, 5, 6, 7], 8))
     memory.add((1, 2, 3, [4, 5, 6, 7], 8))

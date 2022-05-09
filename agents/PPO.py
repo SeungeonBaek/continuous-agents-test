@@ -8,6 +8,9 @@ from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense
 
+from utils.replay_buffer import ExperienceMemory
+from copy import deepcopy
+
 
 class Actor(Model):
     def __init__(self, obs_space, action_space):
@@ -20,6 +23,7 @@ class Actor(Model):
         self.l3 = Dense(64, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l4 = Dense(32, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.mu = Dense(action_space, activation='tanh')
+        self.std = Dense(action_space, activation='tanh')
 
     def call(self, state):
         l1 = self.l1(state)
@@ -27,8 +31,9 @@ class Actor(Model):
         l3 = self.l3(l2)
         l4 = self.l4(l3)
         mu = self.mu(l4)
+        std = self.std(l4)
 
-        return mu
+        return mu, std
 
 
 class Critic(Model):
@@ -91,8 +96,8 @@ class Agent:
         self.gae_normalize = self.agent_config['use_GAE']
 
         self.update_step = 0
-        self.update_freq = self.agent_config['update_freq']
 
+        self.replay_buffer = ExperienceMemory(self.agent_config['512'])
         self.batch_size = self.agent_config['batch_size']
         self.epoch = self.agent_config['epoch_num']
 
@@ -102,9 +107,7 @@ class Agent:
 
         # extension config
         self.extension_config = self.agent_config['extension']
-        self.std = self.extension_config['gaussian_std']
-        self.noise_clip = self.extension_config['noise_clip']
-        self.reduce_rate = self.extension_config['noise_reduction_rate']
+        self.std_bound = self.extension_config['std_bound']
 
         self.actor_lr = self.agent_config['lr_actor']
         self.critic_lr = self.agent_config['lr_critic']
@@ -117,26 +120,29 @@ class Agent:
         self.critic_opt = Adam(self.critic_lr)
         self.critic.compile(optimizer=self.critic_opt)
 
-    def get_action(self, state):
-        state = tf.convert_to_tensor([state], dtype=tf.float32)
+    def action(self, obs):
+        obs = tf.convert_to_tensor([obs], dtype=tf.float32)
 
-        mu, std_, value = self.ppo(state)
+        mu, std_ = self.actor(obs)
         std = tf.stop_gradient(tf.clip_by_value(std_, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
         dist = tfp.distributions.Normal(loc=mu, scale=std)
         action = tf.squeeze(dist.sample())
         log_policy = tf.reduce_sum(dist.log_prob(action), 1, keepdims=False)
+
+        action = action.numpy()
+        action = np.clip(action, -1, 1)
 
         # print('in get action, state : ', state)
         # print('mu, std :', mu, std)
         # print('action : ', action)
         # print('log_policy : ', log_policy)
 
-        return action, log_policy, value.numpy()[0][0]
+        return action, log_policy.numpy()
     
     def get_gaes(self, rewards, dones, values, next_values):
         deltas = [r + self.gamma * (1 - d) * nv - v for r, d, nv, v in zip(rewards, dones, next_values, values)]
         deltas = np.stack(deltas)
-        gaes = copy.deepcopy(deltas)
+        gaes = deepcopy(deltas)
 
         for t in reversed(range(len(deltas) - 1)):
             gaes[t] = gaes[t] + (1 - dones[t]) * self.gamma * self.lamda * gaes[t + 1]
@@ -153,7 +159,7 @@ class Agent:
 
         return gaes, target
 
-    def update(self, entity_episodes):
+    def update(self):
         # print('entity_episodes : ', entity_episodes)
         state = np.array([], np.float64)
         next_state = np.array([], np.float64)
@@ -163,6 +169,8 @@ class Agent:
         old_log_policy = np.array([], np.float64)
         adv = np.array([], np.float64)
         target = np.array([], np.float64)
+        
+        entity_episodes = None
 
         for _, entity_samples in entity_episodes.items():
             # print('entity_samples : ', entity_samples)
@@ -179,14 +187,14 @@ class Agent:
                 next_values=np.squeeze(next_value))
             
             if state.size == 0:
-                state = copy.deepcopy(entity_samples['state'])
-                next_state = copy.deepcopy(entity_samples['next_state'])
-                reward = copy.deepcopy(entity_samples['reward'])
-                done = copy.deepcopy(entity_samples['done'])
-                action = copy.deepcopy(np.squeeze(entity_samples['action']))
-                old_log_policy = copy.deepcopy(np.squeeze(entity_samples['old_log_policy']))
-                adv = copy.deepcopy(entity_adv)
-                target = copy.deepcopy(entity_target)
+                state = deepcopy(entity_samples['state'])
+                next_state = deepcopy(entity_samples['next_state'])
+                reward = deepcopy(entity_samples['reward'])
+                done = deepcopy(entity_samples['done'])
+                action = deepcopy(np.squeeze(entity_samples['action']))
+                old_log_policy = deepcopy(np.squeeze(entity_samples['old_log_policy']))
+                adv = deepcopy(entity_adv)
+                target = deepcopy(entity_target)
             
             else:
                 state = np.concatenate((state, entity_samples['state']),axis = 0)
@@ -305,16 +313,22 @@ class Agent:
             value_loss_mem += value_loss.numpy() / self.epoch
             total_loss_mem += total_loss.numpy() / self.epoch
             
-        self.ppo_ent *= self.ppo_ent_reduct_ratio
+        self.entropy_coeff *= self.entropy_reduction_rate
 
-        return True, entropy_mem, ratio_mem, pi_loss_mem, adv_mem, value_target_mem, value_cur_mem, value_loss_mem, total_loss_mem
+        return True, entropy_mem, ratio_mem, pi_loss_mem, adv_mem, value_target_mem, value_cur_mem, value_loss_mem
 
-    def load_model(self, model_path):
-        print('Load Model Path : ', model_path)
-        self.ppo.load_weights(model_path, by_name = False)
+    def save_xp(self, state, next_state, reward, action, done):
+        # Store transition in the replay buffer.
+        self.replay_buffer.add((state, next_state, reward, action, done))
 
-    def save_model_loss(self, model_save_dir, loss):
-        save_path = str(model_save_dir) + "loss_" + str(loss) + "_model"
-        # print('Save Model Path : ', save_path)
-        self.ppo.save_weights(save_path, "_model")
+    def load_models(self, path):
+        print('Load Model Path : ', path)
+        self.actor.load_weights(path, "_actor")
+        self.critic.load_weights(path, "_critic")
+
+    def save_models(self, path, score):
+        save_path = str(path) + "score_" + str(score) + "_model"
+        print('Save Model Path : ', save_path)
+        self.actor.save_weights(save_path, "_actor")
+        self.critic.save_weights(save_path, "_critic")
 

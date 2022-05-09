@@ -141,12 +141,13 @@ def step_logging_tensorboard(agent_config, Agent, summary_writer, episode_step):
             updated, actor_loss, critic_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
 
     elif agent_config['agent_name'] == 'PPO':
-        if agent_config['extension']['name'] == 'MEPPO':
-            updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
-        elif agent_config['extension']['name'] == 'gSDE':
-            updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
-        else:
-            updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
+        if len(Agent.memory) % agent_config['update_freq'] == 0:
+            if agent_config['extension']['name'] == 'MEPPO':
+                updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
+            elif agent_config['extension']['name'] == 'gSDE':
+                updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
+            else:
+                updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
 
     elif agent_config['agent_name'] == 'SAC':
         if agent_config['extension']['name'] == 'TQC':
@@ -224,7 +225,7 @@ def step_logging_wandb(agent_config, Agent, summary_writer, episode_step):
             summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
 
 
-def episode_logging(summary_writer, episode_score, episode_step, episode_num):
+def episode_logging_tensorboard(summary_writer, episode_score, episode_step, episode_num):
     summary_writer.add_scalar('00_Episode/Score', episode_score, episode_num)
     summary_writer.add_scalar('00_Episode/Average_reward', episode_score/episode_step, episode_num)
     summary_writer.add_scalar('00_Episode/Steps', episode_step, episode_num)
@@ -300,7 +301,7 @@ def main(env_config, agent_config, rl_confing, summary_writer, data_save_path):
 
         env.close()
 
-        episode_logging(summary_writer, episode_score, episode_step, episode_num)
+        episode_logging_tensorboard(summary_writer, episode_score, episode_step, episode_num)
 
         if rl_confing['csv_logging']:
             episode_data['episode_score'][episode_num-1] = episode_score

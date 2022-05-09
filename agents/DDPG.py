@@ -317,7 +317,7 @@ class Agent:
     def save_models(self, path, score):
         save_path = str(path) + "score_" + str(score) + "_model"
         print('Save Model Path : ', save_path)
-        self.actor_main.save_weights(save_path, "_actor")
+        self.actor_main.save_weights(save_path, "_actor_main")
         self.actor_target.save_weights(save_path, "_actor_target")
         self.critic_main.save_weights(save_path, "_critic_main")
         self.critic_target.save_weights(save_path, "_critic_target")
