@@ -9,11 +9,11 @@ from tensorboardX import SummaryWriter
 
 def env_agent_setting(env_switch, agent_switch):
     if env_switch == 1:
-        env_config = {'env_name': 'LunarLander-v2', 'seed': 777, 'render': False, 'max_step': 1000, 'max_episode': 501}
+        env_config = {'env_name': 'LunarLanderContinuous-v2', 'seed': 777, 'render': False, 'max_step': 1000, 'max_episode': 501}
     elif env_switch == 2: # Todo
-        env_config = {'env_name': 'LunarLander-v2', 'seed': 777, 'render': False, 'max_step': 1000, 'max_episode': 501}
+        env_config = {'env_name': 'pg-drive', 'seed': 777, 'render': False, 'max_step': 1000, 'max_episode': 501}
     elif env_switch == 3: # Todo
-        env_config = {'env_name': 'LunarLander-v2', 'seed': 777, 'render': False, 'max_step': 1000, 'max_episode': 501}
+        env_config = {'env_name': 'domestic-env', 'seed': 777, 'render': False, 'max_step': 1000, 'max_episode': 501}
     else:
         raise ValueError('Please try to correct env_switch')
 
@@ -68,7 +68,12 @@ def env_agent_setting(env_switch, agent_switch):
 
 
 def env_loader(env_config):
-    env = gym.make(env_config['env_name'])
+    if env_config['env_name'] == 'LunarLanderContinuous-v2':
+        env = gym.make(env_config['env_name'])
+    elif env_config['env_name'] == 'pg-drive':
+        pass
+    else:
+        pass
 
     return env
 
@@ -112,7 +117,47 @@ def agent_loader(agent_config):
     return Agent
 
 
-def step_logging(agent_config, Agent, summary_writer, episode_step):
+def step_logging_tensorboard(agent_config, Agent, summary_writer, episode_step):
+    if agent_config['agent_name'] == 'DDPG':
+        if agent_config['extension']['name'] == 'TQC':
+            updated, actor_loss, critic_loss, trgt_q_mean, critic_value= Agent.update()
+        elif agent_config['extension']['name'] == 'gSDE':
+            updated, actor_loss, critic_loss, trgt_q_mean, critic_value= Agent.update()
+        else:
+            updated, actor_loss, critic_loss, trgt_q_mean, critic_value= Agent.update()
+
+    elif agent_config['agent_name'] == 'TD3':
+        updated, critic_1_loss, critic_2_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
+
+    elif agent_config['agent_name'] == 'PPO':
+        updated, critic_1_loss, critic_2_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
+
+    elif agent_config['agent_name'] == 'SAC':
+        updated, critic_1_loss, critic_2_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
+
+    if agent_config['agent_name'] == 'DDPG':
+        if updated:
+            summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Critic_value', critic_value, Agent.update_step)
+    elif agent_config['agent_name'] == 'TD3':
+        if updated:
+            summary_writer.add_scalar('01_Loss/Critic_1_loss', critic_loss, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
+    elif agent_config['agent_name'] == 'PPO':
+        if updated:
+            summary_writer.add_scalar('01_Loss/Critic_1_loss', critic_1_loss, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
+    elif agent_config['agent_name'] == 'SAC':
+        if updated:
+            summary_writer.add_scalar('01_Loss/Critic_1_loss', critic_1_loss, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
+
+
+def step_logging_wandb(agent_config, Agent, summary_writer, episode_step):
     if agent_config['agent_name'] == 'DDPG':
         if agent_config['extension']['name'] == 'TQC':
             updated, critic_loss, trgt_q_mean, critic_value= Agent.update(episode_step)
@@ -174,6 +219,7 @@ def main(env_config, agent_config, rl_confing, summary_writer, data_save_path):
     act_space = env_act_space[0]
 
     # Agent
+    print(agent_config)
     RLAgent = agent_loader(agent_config)
     Agent = RLAgent(agent_config, obs_space, act_space)
     print('agent_name: {}'.format(agent_config['agent_name']))
@@ -225,7 +271,7 @@ def main(env_config, agent_config, rl_confing, summary_writer, data_save_path):
                 done = True
                 continue
             
-            step_logging(agent_config, Agent, episode_step)
+            step_logging_tensorboard(agent_config, Agent, summary_writer, episode_step)
 
         env.close()
 

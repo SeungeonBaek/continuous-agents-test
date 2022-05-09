@@ -13,7 +13,7 @@ from utils.prioritized_memory_numpy import PrioritizedMemory
 
 
 class Actor(Model):
-    def __init__(self, action_space):
+    def __init__(self, obs_space, action_space):
         super(Actor,self).__init__()
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
@@ -102,10 +102,10 @@ class Agent:
         self.warm_up = self.agent_config['warm_up']
 
         # network config
-        self.actor_lr_main = self.agent_config['lr_actor_main']
-        self.critic_lr_main = self.agent_config['lr_critic_main']
+        self.actor_lr_main = self.agent_config['lr_actor']
+        self.critic_lr_main = self.agent_config['lr_critic']
 
-        self.actor_main, self.actor_target = Actor(self.obs_size, self.act_size), Actor(self.obs_size, self.act_size)
+        self.actor_main, self.actor_target = Actor(self.obs_space, self.act_space), Actor(self.obs_space, self.act_space)
         self.actor_target.set_weights(self.actor_main.get_weights())
         self.actor_opt_main = Adam(self.actor_lr_main)
         self.actor_main.compile(optimizer=self.actor_opt_main)
@@ -117,9 +117,9 @@ class Agent:
 
         # extension config
         self.extension_config = self.agent_config['extension']
-        self.std = self.agent_config['gaussian_std']
-        self.noise_clip = self.agent_config['noise_clip']
-        self.reduce_rate = self.agent_config['noise_reduce_rate']
+        self.std = self.extension_config['gaussian_std']
+        self.noise_clip = self.extension_config['noise_clip']
+        self.reduce_rate = self.extension_config['noise_reduction_rate']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)

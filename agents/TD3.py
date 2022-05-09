@@ -61,7 +61,7 @@ class Agent:
     input argument: obs_space, act_space, agent_config
 
     agent_config: agent_name, gamma, tau, update_freq, actor_update_freq, batch_size, warm_up,\
-                  gaussian_std, noise_clip, noise_reduce_rate, lr_actor_main, lr_critic_main,\
+                  gaussian_std, noise_clip, noise_reduce_rate, lr_actor, lr_critic,\
                   use_PER, buffer_size, reward_normalize
     """
     def __init__(self, agent_config, obs_space, act_space):
@@ -88,10 +88,11 @@ class Agent:
         self.batch_size = self.agent_config['batch_size']
         self.warm_up = self.agent_config['warm_up']
 
+        # extension config
         self.extension_config = self.agent_config['extension']
         self.std = self.extension_config['gaussian_std']
         self.noise_clip = self.extension_config['noise_clip']
-        self.reduce_rate = self.extension_config['noise_reduce_rate']
+        self.reduce_rate = self.extension_config['noise_reduction_rate']
 
         self.actor_lr_main = self.agent_config['lr_actor']
         self.critic_lr_main = self.agent_config['lr_critic']
