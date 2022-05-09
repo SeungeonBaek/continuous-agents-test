@@ -62,9 +62,10 @@ class Agent:
         agent_config: agent configuration which is realted with RL algorithm => DDPG
             agent_config:
                 {
-                    name, gamma, tau, update_freq, use_PER, use_ERE, buffer_size, batch_size, warm_up, lr_actor_main, lr_critic_main,
+                    name, gamma, tau, update_freq, batch_size, warm_up, lr_actor, lr_critic,
+                    buffer_size, use_PER, use_ERE, reward_normalize
                     extension = {
-                        'gaussian_std, 'noise_reduce_rate'
+                        'gaussian_std, 'noise_clip', 'noise_reduce_rate'
                     }
                 }
         obs_shape_n: shpae of observation

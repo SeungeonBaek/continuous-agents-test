@@ -58,11 +58,28 @@ class Critic(Model):
 
 class Agent:
     """
-    input argument: obs_space, act_space, agent_config
+    Argument:
+        agent_config: agent configuration which is realted with RL algorithm => TD3
+            agent_config:
+                {
+                    name, gamma, tau, update_freq, actor_update_freq, batch_size, warm_up, lr_actor, lr_critic,
+                    buffer_size, use_PER, use_ERE, reward_normalize
+                    extension = {
+                        'gaussian_std, 'noise_clip', 'noise_reduce_rate'
+                    }
+                }
+        obs_shape_n: shpae of observation
+        act_shape_n: shape of action
 
-    agent_config: agent_name, gamma, tau, update_freq, actor_update_freq, batch_size, warm_up,\
-                  gaussian_std, noise_clip, noise_reduce_rate, lr_actor, lr_critic,\
-                  use_PER, buffer_size, reward_normalize
+    Methods:
+        action: return the action which is mapped with obs in policy
+        target_action: return the target action which is mapped with obs in target_policy
+        update_target: update target critic/actor network at user-specified frequency
+        update: update main critic/actor network
+        save_xp: save transition(s, a, r, s', d) in experience memory
+        load_models: load weights
+        save_models: save weights
+    
     """
     def __init__(self, agent_config, obs_space, act_space):
         self.agent_config = agent_config
@@ -264,6 +281,7 @@ class Agent:
         self.critic_opt_main_1.apply_gradients(zip(grads_critic_1, critic1_variable))
         self.critic_opt_main_2.apply_gradients(zip(grads_critic_2, critic2_variable))
 
+        actor_loss_val = np.float32(0)
         if self.critic_steps % self.actor_update_freq == 0:
 
             actor_variable = self.actor_main.trainable_variables
