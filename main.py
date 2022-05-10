@@ -71,15 +71,15 @@ def env_loader(env_config):
     if env_config['env_name'] == 'LunarLanderContinuous-v2':
         env = gym.make(env_config['env_name'])
         obs_space = env.observation_space.shape
-        act_space = env.action_space.shape.n
+        act_space = env.action_space.shape
     elif env_config['env_name'] == 'pg-drive':
         env = gym.make('pg-drive')
         obs_space = env.observation_space.shape
-        act_space = env.action_space.shape.n
+        act_space = env.action_space.n
     elif env_config['env_name'] == 'domestic':
         env = gym.make('nota-its-v0')
         obs_space = env.observation_space.shape
-        act_space = env.action_space.shape.n
+        act_space = env.action_space.n
 
     return env, obs_space, act_space
 
@@ -140,15 +140,6 @@ def step_logging_tensorboard(agent_config, Agent, summary_writer, episode_step):
         else:
             updated, actor_loss, critic_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
 
-    elif agent_config['agent_name'] == 'PPO':
-        if len(Agent.memory) % agent_config['update_freq'] == 0:
-            if agent_config['extension']['name'] == 'MEPPO':
-                updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
-            elif agent_config['extension']['name'] == 'gSDE':
-                updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
-            else:
-                updated, actor_loss, entropy, critic_loss, advantage, critic_value = Agent.update()
-
     elif agent_config['agent_name'] == 'SAC':
         if agent_config['extension']['name'] == 'TQC':
             updated, actor_loss, critic_loss, trgt_q_mean, critic_value, critic_q_value = Agent.update()
@@ -170,13 +161,6 @@ def step_logging_tensorboard(agent_config, Agent, summary_writer, episode_step):
             summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
             summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
             summary_writer.add_scalar('02_Critic/Critic_2_value', critic_2_value, Agent.update_step)
-    elif agent_config['agent_name'] == 'PPO':
-        if updated:
-            summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
-            summary_writer.add_scalar('01_Loss/Actor_loss', actor_loss, Agent.update_step)
-            summary_writer.add_scalar('02_Critic/Advantage', advantage, Agent.update_step)
-            summary_writer.add_scalar('02_Critic/Critic_value', critic_value, Agent.update_step)
-            summary_writer.add_scalar('03_Actor/Entropy', entropy, Agent.update_step)
     elif agent_config['agent_name'] == 'SAC':
         if updated:
             summary_writer.add_scalar('01_Loss/Critic_1_loss', critic_loss, Agent.update_step)
@@ -225,7 +209,24 @@ def step_logging_wandb(agent_config, Agent, summary_writer, episode_step):
             summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
 
 
-def episode_logging_tensorboard(summary_writer, episode_score, episode_step, episode_num):
+def episode_logging_tensorboard(agent_config, Agent, summary_writer, episode_score, episode_step, episode_num):
+    if agent_config['agent_name'] == 'PPO':
+        if agent_config['extension']['name'] == 'MEPPO':
+            updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+        elif agent_config['extension']['name'] == 'gSDE':
+            updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+        else:
+            updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+
+        if updated:
+            summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
+            summary_writer.add_scalar('01_Loss/Actor_loss', actor_loss, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Advantage', advantage, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Target_value', target_val, Agent.update_step)
+            summary_writer.add_scalar('02_Critic/Critic_value', critic_value, Agent.update_step)
+            summary_writer.add_scalar('03_Actor/Entropy', entropy, Agent.update_step)
+            summary_writer.add_scalar('03_Actor/Ratio', ratio, Agent.update_step)
+
     summary_writer.add_scalar('00_Episode/Score', episode_score, episode_num)
     summary_writer.add_scalar('00_Episode/Average_reward', episode_score/episode_step, episode_num)
     summary_writer.add_scalar('00_Episode/Steps', episode_step, episode_num)
@@ -264,6 +265,7 @@ def main(env_config, agent_config, rl_confing, summary_writer, data_save_path):
 
         prev_obs = None
         prev_action = None
+        prev_log_policy = None
 
         obs = env.reset()
         obs = np.array(obs)
@@ -276,7 +278,10 @@ def main(env_config, agent_config, rl_confing, summary_writer, data_save_path):
                 env.render()
             episode_step += 1
 
-            action = Agent.action(obs)
+            if agent_config['agent_name'] == 'PPO':
+                action, log_policy = Agent.action(obs)
+            else:
+                action = Agent.action(obs)
             
             obs, reward, done, _ = env.step(action)
             obs = np.array(obs)
@@ -288,10 +293,14 @@ def main(env_config, agent_config, rl_confing, summary_writer, data_save_path):
 
             # Save_xp
             if episode_step > 2:
-                Agent.save_xp(prev_obs, obs, reward, prev_action, done)
+                if agent_config['agent_name'] == 'PPO':
+                    Agent.save_xp(prev_obs, obs, reward, prev_action, prev_log_policy, done)
+                else:
+                    Agent.save_xp(prev_obs, obs, reward, prev_action, done)
 
             prev_obs = obs
             prev_action = action
+            prev_log_policy = log_policy
 
             if episode_step >= env_config['max_step']:
                 done = True
@@ -301,7 +310,7 @@ def main(env_config, agent_config, rl_confing, summary_writer, data_save_path):
 
         env.close()
 
-        episode_logging_tensorboard(summary_writer, episode_score, episode_step, episode_num)
+        episode_logging_tensorboard(agent_config, Agent, summary_writer, episode_score, episode_step, episode_num)
 
         if rl_confing['csv_logging']:
             episode_data['episode_score'][episode_num-1] = episode_score
@@ -320,7 +329,7 @@ if __name__ == '__main__':
     # Env =>   1: LunarLander-v2, 2: pg-drive 3: dometstic env
     # Agent => 1: DDPG, 2: DDPG_TQC, 3: DDPG_gSDE    #  4: TD3,  5: TD3_TQC,  6: TD3_gSDE    #  7: PPO,  8: MEPPO,    9: PPO_gSDE    # 10: SAC, 11: SAC_TQC, 12: SAC_gSDE
     env_switch = 1
-    agent_switch = 4
+    agent_switch = 7
 
     env_config, agent_config = env_agent_setting(env_switch, agent_switch)
     

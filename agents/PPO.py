@@ -8,7 +8,7 @@ from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense
 
-from utils.replay_buffer import ExperienceMemory
+from utils.replay_buffer_PPO import ExperienceMemory
 from copy import deepcopy
 
 
@@ -97,13 +97,15 @@ class Agent:
 
         self.update_step = 0
 
-        self.replay_buffer = ExperienceMemory(self.agent_config['512'])
+        self.replay_buffer = ExperienceMemory(2000)
         self.batch_size = self.agent_config['batch_size']
         self.epoch = self.agent_config['epoch_num']
 
         self.entropy_coeff = self.agent_config['entropy_coeff']
         self.entropy_reduction_rate = self.agent_config['entropy_reduction_rate']
         self.epsilon = self.agent_config['epsilon']
+
+        self.reward_normalize = self.agent_config['reward_normalize']
 
         # extension config
         self.extension_config = self.agent_config['extension']
@@ -112,7 +114,7 @@ class Agent:
         self.actor_lr = self.agent_config['lr_actor']
         self.critic_lr = self.agent_config['lr_critic']
 
-        self.actor = Actor(self.act_space)
+        self.actor = Actor(self.obs_space, self.act_space)
         self.actor_opt = Adam(self.actor_lr)
         self.actor.compile(optimizer=self.actor_opt)
         
@@ -125,7 +127,7 @@ class Agent:
 
         mu, std_ = self.actor(obs)
         std = tf.stop_gradient(tf.clip_by_value(std_, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
-        dist = tfp.distributions.Normal(loc=mu, scale=std)
+        dist = tfp.distributions.Normal(loc=mu, scale=tf.math.abs(std))
         action = tf.squeeze(dist.sample())
         log_policy = tf.reduce_sum(dist.log_prob(action), 1, keepdims=False)
 
@@ -160,166 +162,137 @@ class Agent:
         return gaes, target
 
     def update(self):
-        # print('entity_episodes : ', entity_episodes)
-        state = np.array([], np.float64)
-        next_state = np.array([], np.float64)
-        reward = np.array([], np.float64)
-        done = np.array([], np.float64)
-        action = np.array([], np.int32)
-        old_log_policy = np.array([], np.float64)
-        adv = np.array([], np.float64)
-        target = np.array([], np.float64)
-        
-        entity_episodes = None
+        update = True
+        self.update_step += 1
 
-        for _, entity_samples in entity_episodes.items():
-            # print('entity_samples : ', entity_samples)
-            _, _, next_value = self.ppo(tf.convert_to_tensor(entity_samples['next_state'], dtype=tf.float32))
-            next_value = np.array(next_value)
+        states, next_states, rewards, actions, old_log_policies, dones = self.replay_buffer.sample()
 
-            if self.reward_normalization:
-                entity_samples['reward'] = (entity_samples['reward'] - entity_samples['reward'].mean()) / (entity_samples['reward'].std() + 1e-5)
+        states      = np.array(states, dtype=np.float32)
+        next_states = np.array(next_states, dtype=np.float32)
+        rewards     = np.array(rewards, dtype=np.float32)
+        actions     = np.array(actions, dtype=np.float32)
+        old_log_polices   = np.array(old_log_policies, dtype=np.float32)
+        dones       = np.array(dones, dtype=np.float32)
 
-            entity_adv, entity_target = self.get_gaes(
-                rewards=np.squeeze(entity_samples['reward']),
-                dones=np.squeeze(entity_samples['done']),
-                values=np.squeeze(entity_samples['old_value']),
-                next_values=np.squeeze(next_value))
-            
-            if state.size == 0:
-                state = deepcopy(entity_samples['state'])
-                next_state = deepcopy(entity_samples['next_state'])
-                reward = deepcopy(entity_samples['reward'])
-                done = deepcopy(entity_samples['done'])
-                action = deepcopy(np.squeeze(entity_samples['action']))
-                old_log_policy = deepcopy(np.squeeze(entity_samples['old_log_policy']))
-                adv = deepcopy(entity_adv)
-                target = deepcopy(entity_target)
-            
-            else:
-                state = np.concatenate((state, entity_samples['state']),axis = 0)
-                next_state = np.concatenate((next_state, entity_samples['next_state']),axis = 0)
-                reward = np.concatenate((reward, entity_samples['reward']),axis = 0)
-                done = np.concatenate((done, entity_samples['done']),axis = 0)
-                action = np.concatenate((action, np.squeeze(entity_samples['action'])),axis = 0)
-                old_log_policy = np.concatenate((old_log_policy, np.squeeze(entity_samples['old_log_policy'])),axis = 0)
-                adv = np.concatenate((adv, entity_adv), axis = 0)
-                target = np.concatenate((target, entity_target), axis = 0)
+        values      = self.critic(tf.convert_to_tensor(states, dtype=tf.float32))
+        values      = np.array(values)
 
-        # print('state : ', np.shape(state))
-        # print('next_state : ', np.shape(next_state))
-        # print('reward : ', np.shape(reward))
-        # print('done : ', np.shape(done))
-        # print('old_log_policy : ', np.shape(old_log_policy))
-        # print('adv : ', np.shape(adv))
-        # print('target : ', np.shape(target))
-        # print('action : ', np.shape(action))
+        next_values = self.critic(tf.convert_to_tensor(next_states, dtype=tf.float32))
+        next_values = np.array(next_values)
 
-        total_loss = 0
+        if self.reward_normalize:
+            rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
 
-        entropy_mem = 0
-        ratio_mem = 0
-        pi_loss_mem = 0
-        adv_mem = 0
-        value_target_mem = 0
-        value_cur_mem = 0
-        value_loss_mem = 0
-        total_loss_mem = 0
+        advs, targets = self.get_gaes(rewards=rewards,dones=dones,values=values,next_values=next_values)
+
+        # for logging
+        entropy_mem     = 0
+        ratio_mem       = 0
+        actor_loss_mem  = 0
+        adv_mem         = 0
+        target_val_mem  = 0
+        current_val_mem = 0
+        critic_loss_mem = 0
 
         for _ in range(self.epoch):
-            sample_range = np.arange(len(state))
+            sample_range = np.arange(len(states))
             np.random.shuffle(sample_range)
             sample_idx = sample_range[:self.batch_size]
             
-            batch_state = [state[i] for i in sample_idx]
-            # batch_done = [done[i] for i in sample_idx]
-            batch_action = [action[i] for i in sample_idx]
-            batch_target = [target[i] for i in sample_idx]
-            batch_old_log_policy = [old_log_policy[i] for i in sample_idx]
-            batch_adv = [adv[i] for i in sample_idx]
+            batch_state = [states[i] for i in sample_idx]
+            batch_action = [actions[i] for i in sample_idx]
+            batch_target = [targets[i] for i in sample_idx]
+            batch_old_log_policy = [old_log_polices[i] for i in sample_idx]
+            batch_adv = [advs[i] for i in sample_idx]
 
-            ppo_variable = self.ppo.trainable_variables
-            
+            critic_variable = self.critic.trainable_variables
+            with tf.GradientTape() as tape_critic:
+                tape_critic.watch(critic_variable)
+                current_value = self.critic(tf.convert_to_tensor(batch_state, dtype=tf.float32))
+                # print(f'current_value : {current_value.shape}')
+                current_value = tf.squeeze(current_value)
+                # print(f'current_value : {current_value.shape}')
+
+                target_value = tf.convert_to_tensor(batch_target, dtype=tf.float32)
+                # print(f'target_value : {target_value.shape}')
+                target_value = tf.squeeze(target_value)
+                # print(f'target_value : {target_value.shape}')
+
+                td_error = tf.subtract(current_value, target_value)
+                # print(f'td_error : {td_error.shape}')
+
+                critic_loss = tf.math.reduce_mean(tf.math.square(td_error))
+                # print(f'critic_loss : {critic_loss.shape}')
+
+            grads_critic, _ = tf.clip_by_global_norm(tape_critic.gradient(critic_loss, critic_variable), 0.5)
+
+            self.critic_opt.apply_gradients(zip(grads_critic, critic_variable))
+
+
+            actor_variable = self.actor.trainable_variables   
             with tf.GradientTape() as tape:
-                tape.watch(ppo_variable)
-                train_mu, train_std, train_current_value = self.ppo(tf.convert_to_tensor(batch_state, dtype=tf.float32))
-                train_current_value = tf.squeeze(train_current_value)
-                # 추가
-                # train_std_ = tf.stop_gradient(tf.clip_by_value(train_std, clip_value_min=self.std_bound[0], clip_value_max=1))
-                train_dist = tfp.distributions.Normal(loc = train_mu, scale = train_std)
-                # print('train_mu : ', np.shape(train_mu.numpy()))
-                # print('train_std : ', np.shape(train_std.numpy()))
-                # print('train cur value : ', np.shape(train_current_value.numpy()))
-                # print('train dist : ', train_dist.batch_shape_tensor())
+                tape.watch(actor_variable)
+                train_mu, train_std = self.actor(tf.convert_to_tensor(batch_state, dtype=tf.float32))
+                # print(f'train_mu : {train_mu.shape}, train_std : {train_std.shape}')
 
-                train_adv = tf.convert_to_tensor(batch_adv, dtype=tf.float32)
-                # print('train adv : ', np.shape(train_adv.numpy()))
+                train_dist = tfp.distributions.Normal(loc = train_mu, scale = tf.math.abs(train_std))
 
-                train_target = tf.convert_to_tensor(batch_target, dtype=tf.float32)
-                # print('train target : ', np.shape(train_target.numpy()))
+                entropy = tf.reduce_mean(train_dist.entropy())
+                # print(f'entropy : {entropy.shape}')
 
                 train_action = tf.convert_to_tensor(batch_action, dtype=tf.float32)
-                # print('train action : ', np.shape(train_action.numpy()))
+                # print(f'train_action : {train_action.shape}')
 
-                # entropy = tf.reduce_mean(tf.multiply(-tf.squeeze(train_logits),tf.math.log(tf.squeeze(train_logits) + 1e-8)))
-                entropy = tf.reduce_mean(train_dist.entropy())
                 train_log_policy = tf.reduce_sum(train_dist.log_prob(train_action), 1, keepdims=False)
-                train_old_log_policy = tf.convert_to_tensor(batch_old_log_policy, dtype=tf.float32)
+                # print(f'train_log_policy : {train_log_policy.shape}')
 
-                # print('train entropy : ', np.shape(entropy.numpy()))
-                # print('train log policy : ', np.shape(train_log_policy.numpy()))
-                # print('train old log policy : ', np.shape(train_old_log_policy.numpy()))
+                train_old_log_policy = tf.convert_to_tensor(batch_old_log_policy, dtype=tf.float32)
+                # print(f'train_old_log_policy : {train_old_log_policy.shape}')
+                train_old_log_policy = tf.squeeze(batch_old_log_policy)
+                # print(f'train_old_log_policy : {train_old_log_policy.shape}')
+
+                train_adv = tf.convert_to_tensor(batch_adv, dtype=tf.float32)
+                # print(f'train_adv : {train_adv.shape}')
+                train_adv = tf.squeeze(train_adv)
+                # print(f'train_adv : {train_adv.shape}')
 
                 ratio = tf.exp(train_log_policy - train_old_log_policy)
+                # print(f'ratio : {ratio.shape}')
+
                 surr1 = tf.multiply(train_adv, ratio)
-                surr2 = tf.multiply(train_adv, tf.clip_by_value(ratio, clip_value_min=1-self.ppo_eps, clip_value_max=1+self.ppo_eps))
+                # print(f'surr1 : {surr1.shape}')
+                surr2 = tf.multiply(train_adv, tf.clip_by_value(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon))
+                # print(f'surr2 : {surr2.shape}')
+
                 minimum = tf.minimum(surr1, surr2)
-                pi_loss = -tf.reduce_mean(minimum) - entropy * self.ppo_ent
+                # print(f'minimum : {minimum.shape}')
+
+                actor_loss = -tf.reduce_mean(minimum) - entropy * self.entropy_coeff
+                # print(f'actor_loss : {actor_loss.shape}')
                 
-                # print('train ratio : ', np.shape(ratio.numpy()))
-                # print('train surr1 : ', np.shape(surr1.numpy()))
-                # print('train surr1 : ', np.shape(surr1.numpy()))
-                # print('train minimum : ', np.shape(minimum.numpy()))
-                # print('train pi_loss : ', np.shape(pi_loss.numpy()))
+            grads, _ = tf.clip_by_global_norm(tape.gradient(actor_loss, actor_variable), 0.5)
 
-                value_loss = tf.reduce_mean(tf.square(train_target - train_current_value))
-                total_loss = pi_loss + self.ppo_val * value_loss
-                
-                # print('train value_loss : ', np.shape(value_loss.numpy()))
-                # print('in ppo train total_loss : ', np.shape(total_loss.numpy()))
-
-            if self.gradient_clipping:
-                grads, _ = tf.clip_by_global_norm(tape.gradient(total_loss, ppo_variable), 0.5)
-            else:
-                grads = tape.gradient(total_loss, ppo_variable)
-
-            self.opt.apply_gradients(zip(grads, ppo_variable))
-            self.gradient_steps += 1
+            self.actor_opt.apply_gradients(zip(grads, actor_variable))
 
             advantage = tf.reduce_mean(train_adv).numpy()
-            value_target = tf.reduce_mean(train_target).numpy()
-            value_cur = tf.reduce_mean(train_current_value).numpy()
-
-            # print('train advantage : ', np.shape(advantage))
-            # print('train value_target : ', np.shape(value_target))
-            # print('train value_cur : ', np.shape(value_cur))  
+            target_value = tf.reduce_mean(target_value).numpy()
+            current_value = tf.reduce_mean(current_value).numpy()
 
             entropy_mem += entropy.numpy() / self.epoch
             ratio_mem += tf.reduce_mean(ratio).numpy() / self.epoch
-            pi_loss_mem += pi_loss.numpy() / self.epoch
+            actor_loss_mem += actor_loss.numpy() / self.epoch
             adv_mem += advantage / self.epoch
-            value_target_mem += value_target / self.epoch
-            value_cur_mem += value_cur / self.epoch
-            value_loss_mem += value_loss.numpy() / self.epoch
-            total_loss_mem += total_loss.numpy() / self.epoch
+            target_val_mem += target_value / self.epoch
+            current_val_mem += current_value / self.epoch
+            critic_loss_mem += critic_loss.numpy() / self.epoch
             
         self.entropy_coeff *= self.entropy_reduction_rate
 
-        return True, entropy_mem, ratio_mem, pi_loss_mem, adv_mem, value_target_mem, value_cur_mem, value_loss_mem
+        return True, entropy_mem, ratio_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
 
-    def save_xp(self, state, next_state, reward, action, done):
+    def save_xp(self, state, next_state, reward, action, log_policy, done):
         # Store transition in the replay buffer.
-        self.replay_buffer.add((state, next_state, reward, action, done))
+        self.replay_buffer.add((state, next_state, reward, action, log_policy, done))
 
     def load_models(self, path):
         print('Load Model Path : ', path)
