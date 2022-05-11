@@ -118,6 +118,7 @@ class Agent:
 
         # extension config
         self.extension_config = self.agent_config['extension']
+        self.extension_name = self.extension_config['name']
         self.std = self.extension_config['gaussian_std']
         self.noise_clip = self.extension_config['noise_clip']
         self.reduce_rate = self.extension_config['noise_reduction_rate']

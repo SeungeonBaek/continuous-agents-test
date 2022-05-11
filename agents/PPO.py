@@ -107,10 +107,7 @@ class Agent:
 
         self.reward_normalize = self.agent_config['reward_normalize']
 
-        # extension config
-        self.extension_config = self.agent_config['extension']
-        self.std_bound = self.extension_config['std_bound']
-
+        # network config
         self.actor_lr = self.agent_config['lr_actor']
         self.critic_lr = self.agent_config['lr_critic']
 
@@ -121,6 +118,11 @@ class Agent:
         self.critic = Critic()
         self.critic_opt = Adam(self.critic_lr)
         self.critic.compile(optimizer=self.critic_opt)
+
+        # extension config
+        self.extension_config = self.agent_config['extension']
+        self.extension_name = self.extension_config['name']
+        self.std_bound = self.extension_config['std_bound']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
@@ -134,10 +136,10 @@ class Agent:
         action = action.numpy()
         action = np.clip(action, -1, 1)
 
-        # print('in get action, state : ', state)
-        # print('mu, std :', mu, std)
-        # print('action : ', action)
-        # print('log_policy : ', log_policy)
+        # print(f'in get action, state : {state.shape}')
+        # print(f'mu, std : {mu.shape}, {std.shape}')
+        # print(f'action : {action}')
+        # print(f'log_policy : {log_policy}')
 
         return action, log_policy.numpy()
     

@@ -105,12 +105,7 @@ class Agent:
         self.batch_size = self.agent_config['batch_size']
         self.warm_up = self.agent_config['warm_up']
 
-        # extension config
-        self.extension_config = self.agent_config['extension']
-        self.std = self.extension_config['gaussian_std']
-        self.noise_clip = self.extension_config['noise_clip']
-        self.reduce_rate = self.extension_config['noise_reduction_rate']
-
+        # network config
         self.actor_lr_main = self.agent_config['lr_actor']
         self.critic_lr_main = self.agent_config['lr_critic']
 
@@ -127,6 +122,13 @@ class Agent:
         self.critic_opt_main_2 = Adam(self.critic_lr_main)
         self.critic_main_1.compile(optimizer=self.critic_opt_main_1)
         self.critic_main_2.compile(optimizer=self.critic_opt_main_2)
+
+        # extension config
+        self.extension_config = self.agent_config['extension']
+        self.extension_name = self.extension_config['name']
+        self.std = self.extension_config['gaussian_std']
+        self.noise_clip = self.extension_config['noise_clip']
+        self.reduce_rate = self.extension_config['noise_reduction_rate']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
