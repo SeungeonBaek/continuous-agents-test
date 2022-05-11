@@ -242,7 +242,8 @@ class Agent:
             # print(f'td_error : {td_error.shape}')
 
             critic_losses = tf.cond(tf.convert_to_tensor(self.agent_config['use_PER'], dtype=tf.bool), \
-                lambda: tf.multiply(is_weight, tf.math.square(td_error)), lambda: tf.math.square(td_error))
+                    lambda: tf.multiply(is_weight, tf.math.square(td_error)), \
+                    lambda: tf.math.square(td_error))
             # print(f'critic_losses : {critic_losses.shape}')
 
             critic_loss = tf.math.reduce_mean(critic_losses)
