@@ -37,7 +37,7 @@ class GaussianActor(Model):
             self.log_prob_min = self.gaussian_actor_config['log_prob_min']
             self.log_prob_max = self.gaussian_actor_config['log_prob_max']
 
-            self.noise = IDACGaussActorNoiseModel(1)
+            self.noise = IDACGaussActorNoiseModel(self.gaussian_actor_config['noise_dim'])
             self.noise.build((None, self.obs_space))
         else:
             pass
@@ -53,6 +53,7 @@ class GaussianActor(Model):
     def call(self, state):
         if self.gaussian_actor_config['use_reparam_trick']:
             noise = self.noise(state)
+
             l1 = self.l1(tf.concat([state, noise], axis=1))
             l2 = self.l2(l1)
             mu = self.mu(l2)
@@ -91,6 +92,12 @@ class ImplicitActor(Model):
         super(ImplicitActor,self).__init__()
         self.implicit_actor_config = implicit_actor_config
 
+        self.log_sig_min = self.implicit_actor_config['log_sig_min']
+        self.log_sig_max = self.implicit_actor_config['log_sig_max']
+
+        self.log_prob_min = self.implicit_actor_config['log_prob_min']
+        self.log_prob_max = self.implicit_actor_config['log_prob_max']
+
         self.obs_space = obs_space
         self.action_space = action_space
 
@@ -100,28 +107,32 @@ class ImplicitActor(Model):
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
 
-        if self.implicit_actor_config['use_reparam_trick']:
-            self.log_sig_min = self.implicit_actor_config['log_sig_min']
-            self.log_sig_max = self.implicit_actor_config['log_sig_max']
-
-            self.log_prob_min = self.implicit_actor_config['log_prob_min']
-            self.log_prob_max = self.implicit_actor_config['log_prob_max']
-
-            self.noise = IDACImplicitIActorNoiseModel(1)
-            self.noise.build((None, self.obs_space))
-        else:
-            pass
+        self.noise = IDACImplicitIActorNoiseModel(self.implicit_actor_config['noise_dim'])
+        self.noise.build((None, self.obs_space))
 
         self.mu = Dense(action_space, activation=None)
         self.std = Dense(action_space, activation=None)
 
         self.bijector = tfp.bijectors.Tanh()
 
+    def reset_noise(self):
+        self.noise.sample_weights()
+
     def call(self, state):
-        l1 = self.l1(state)
+        noise = self.noise(state)
+
+        l1 = self.l1(tf.concat([state, noise], axis=1))
         l2 = self.l2(l1)
         mu = self.mu(l2)
         std = self.mu(l2)
+        std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
+
+        dist = tfp.distributions.TransfomedDistribution(
+            tfp.distributions.Normal(loc=mu, scale=std),
+            bijector = self.bijector
+            )
+        action = tf.squeeze(dist.sample())
+        log_prob = tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
 
         return mu, std
 
@@ -131,28 +142,42 @@ class DistCritic(Model):
         Implicit Distributional Critic
     """
     def __init__(self,
-                 distributional_critic_config,
+                 quantile_num,
+                 noise_dim,
                  obs_space,
                  action_space,
                  ):
         super(DistCritic,self,).__init__()
-        self.distributional_critic_config = distributional_critic_config
-        
+        self.quantile_num = quantile_num
+        self.obs_space = self.obs_space
+        self.action_space = self.action_space
+
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
+
+        self.noise = IDACDistCriticNoiseModel(self.quantile_num, self.noise_dim)
+        self.noise.build((None, self.obs_space + self.action_space))
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.value = Dense(1, activation=None)
 
-    def call(self, state, action, noise):
-        l1 = self.l1(tf.concat([state, action, noise], axis=1))
+    def reset_noise(self):
+        self.noise.sample_weights()
+
+    def call(self, state, action):
+        noise = self.noise(tf.concat([state, action], axis=1))
+
+        state_repeat = tf.repeat(state, self.quantile_num, axis=0)
+        action_repeat = tf.repeat(action, self.quantile_num, axis=0)
+
+        l1 = self.l1(tf.concat([state_repeat, action_repeat, noise], axis=1))
         l2 = self.l2(l1)
         value = self.value(l2)
+        value = tf.reshape(state[0], self.quantile_num)
+        g_values = tf.sort(value, axis=1, direction='ASCENDING')
 
-        return value
-
-    def sample(self, state, action, num_saples=1)
+        return g_values
 
 
 class Agent:
