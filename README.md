@@ -13,7 +13,7 @@ DDPG
 TD3  
 
 ## distributional DDPG
-SDPG  (...working)
+SDPG  (...working)  
 IDAC (...working)  
 
 ## others
