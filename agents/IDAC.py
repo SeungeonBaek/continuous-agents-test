@@ -11,7 +11,7 @@ from tensorflow.keras.layers import Dense
 from utils.replay_buffer import ExperienceMemory
 from utils.prioritized_memory_numpy import PrioritizedMemory
 
-from agents.Noise_model import NoiseModel
+from agents.Noise_model import IDACGaussActorNoiseModel, IDACImplicitIActorNoiseModel, IDACDistCriticNoiseModel
 
 class GaussianActor(Model):
     """
@@ -21,17 +21,29 @@ class GaussianActor(Model):
         super(GaussianActor,self).__init__()
         self.gaussian_actor_config = gaussian_actor_config
 
+        self.obs_space = obs_space
+        self.action_space = action_space
+
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
 
-        self.noise = NoiseModel()
-        self.noise.build((None, self.gaussian_actor_config['latent_space']))
+        if self.gaussian_actor_config['use_reparam_trick']:
+            self.log_sig_min = self.gaussian_actor_config['log_sig_min']
+            self.log_sig_max = self.gaussian_actor_config['log_sig_max']
 
-        self.mu = Dense(action_space, activation='tanh')
-        self.std = Dense(action_space, activation='tanh')
+            self.log_prob_min = self.gaussian_actor_config['log_prob_min']
+            self.log_prob_max = self.gaussian_actor_config['log_prob_max']
+
+            self.noise = IDACGaussActorNoiseModel()
+            self.noise.build((None, obs_space))
+        else:
+            pass
+
+        self.mu = Dense(action_space, activation=None)
+        self.std = Dense(action_space, activation=None)
 
         self.bijector = tfp.bijectors.Tanh()
 
@@ -39,12 +51,33 @@ class GaussianActor(Model):
         self.noise.sample_weights()
 
     def call(self, state):
-        l1 = self.l1(state)
-        l2 = self.l2(l1)
-        mu = self.mu(l2)
-        std = self.mu(l2)
+        if self.gaussian_actor_config['use_reparam_trick']:
+            noise = self.noise(state)
+            l1 = self.l1(tf.concat([state, noise], axis=1))
+            l2 = self.l2(l1)
+            mu = self.mu(l2)
+            std = self.std(l2)
+            std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
+            dist = tfp.distributions.TransfomedDistribution(
+                tfp.distributions.Normal(loc=mu, scale=std),
+                bijector = self.bijector
+                )
+            action = tf.squeeze(dist.sample())
+            log_prob = tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
+        else:
+            l1 = self.l1(state)
+            l2 = self.l2(l1)
+            mu = self.mu(l2)
+            std = self.std(l2)
+            std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
+            dist = tfp.distributions.TransfomedDistribution(
+                tfp.distributions.Normal(loc=mu, scale=std),
+                bijector = self.bijector
+                )
+            action = tf.squeeze(dist.sample())
+            log_prob = tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
 
-        return mu, std
+        return action, log_prob
 
 
 class ImplicitActor(Model):
