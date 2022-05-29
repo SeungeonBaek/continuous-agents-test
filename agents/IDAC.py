@@ -11,20 +11,32 @@ from tensorflow.keras.layers import Dense
 from utils.replay_buffer import ExperienceMemory
 from utils.prioritized_memory_numpy import PrioritizedMemory
 
+from agents.Noise_model import NoiseModel
 
 class GaussianActor(Model):
     """
         Gaussian policy
     """
-    def __init__(self, obs_space, action_space):
+    def __init__(self, gaussian_actor_config, obs_space, action_space):
         super(GaussianActor,self).__init__()
+        self.gaussian_actor_config = gaussian_actor_config
+
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+
+        self.noise = NoiseModel()
+        self.noise.build((None, self.gaussian_actor_config['latent_space']))
+
         self.mu = Dense(action_space, activation='tanh')
         self.std = Dense(action_space, activation='tanh')
+
+        self.bijector = tfp.bijectors.Tanh()
+
+    def reset_noise(self):
+        self.noise.sample_weights()
 
     def call(self, state):
         l1 = self.l1(state)
@@ -40,10 +52,9 @@ class ImplicitActor(Model):
         Implicit policy
     """
     def __init__(self,
+                 implicit_actor_config,
                  obs_space,
-                 action_space,
-                 noise_dim,
-                 noise_num):
+                 action_space):
         super(ImplicitActor,self).__init__()
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
@@ -66,27 +77,23 @@ class DistCritic(Model):
     """
         Implicit Distributional Critic
     """
-    def __init__(self,
-                 obs_space,
-                 action_space,
-                 noise_dim,
-                 noise_num):
+    def __init__(self):
         super(DistCritic,self).__init__()
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
-        self.mu = Dense(action_space, activation='tanh')
-        self.std = Dense(action_space, activation='tanh')
+        self.value = Dense(1, activation=None)
 
-    def call(self, state):
-        l1 = self.l1(state)
+    def call(self, state, action, noise):
+        l1 = self.l1(tf.concat([state, action, noise], axis=1))
         l2 = self.l2(l1)
-        mu = self.mu(l2)
-        std = self.mu(l2)
+        value = self.value(l2)
 
-        return mu, std
+        return value
+
+    def sample(self, state, action, num_saples=1)
 
 
 class Agent:
@@ -96,9 +103,14 @@ class Agent:
             agent_config:
                 {
                     name, gamma, tau, update_freq, batch_size, warm_up, lr_actor, lr_critic,
-                    buffer_size, use_PER, use_ERE, reward_normalize
+                    buffer_size, use_PER, use_ERE, reward_normalize,
+                    alpha, qualtile_dim, target_entropy
                     extension = {
-                        'gaussian_std, 'noise_clip', 'noise_reduce_rate'
+                        use_implicit_actor, use_automatic_entropy_tuning
+                        implicit_config: {
+                            actor_noise_num, actor_noise_dim, log_sig_min, log_sig_max,
+                            log_prob_min, log_prob_max
+                        }
                     }
                 }
         obs_shape_n: shpae of observation
@@ -139,22 +151,22 @@ class Agent:
         self.actor_lr_main = self.agent_config['lr_actor']
         self.critic_lr_main = self.agent_config['lr_critic']
 
-        self.actor_main, self.actor_target = Actor(self.obs_space, self.act_space), Actor(self.obs_space, self.act_space)
-        self.actor_target.set_weights(self.actor_main.get_weights())
-        self.actor_opt_main = Adam(self.actor_lr_main)
-        self.actor_main.compile(optimizer=self.actor_opt_main)
-        
-        self.critic_main, self.critic_target = Critic(), Critic()
+        # extension config
+        self.extension_config = self.agent_config['extension']
+
+        if self.extension_config['use_implicit_actor']:
+            self.actor_main = ImplicitActor(self.extension_config['implicit_config'], self.obs_space, self.act_space)
+            self.actor_opt_main = Adam(self.actor_lr_main)
+            self.actor_main.compile(optimizer=self.actor_opt_main)
+        else:
+            self.actor_main = GaussianActor(self.obs_space, self.act_space)
+            self.actor_opt_main = Adam(self.actor_lr_main)
+            self.actor_main.compile(optimizer=self.actor_opt_main)
+
+        self.critic_main, self.critic_target = DistCritic(), DistCritic()
         self.critic_target.set_weights(self.critic_main.get_weights())
         self.critic_opt_main = Adam(self.critic_lr_main)
         self.critic_main.compile(optimizer=self.critic_opt_main)
-
-        # extension config
-        self.extension_config = self.agent_config['extension']
-        self.extension_name = self.extension_config['name']
-        self.std = self.extension_config['gaussian_std']
-        self.noise_clip = self.extension_config['noise_clip']
-        self.reduce_rate = self.extension_config['noise_reduction_rate']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
