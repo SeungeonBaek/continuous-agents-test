@@ -201,7 +201,7 @@ class Agent:
                 {
                     name, gamma, tau, update_freq, batch_size, warm_up, lr_actor, lr_critic,
                     buffer_size, use_PER, use_ERE, reward_normalize,
-                    alpha, qualtile_dim, noise_dim, target_entropy
+                    alpha, qualtile_dim, noise_dim
                     extension = {
                         use_implicit_actor, use_automatic_entropy_tuning,
                         implicit_actor_config: {
