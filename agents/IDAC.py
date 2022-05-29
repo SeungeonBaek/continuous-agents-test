@@ -86,6 +86,7 @@ class ImplicitActor(Model):
         super(ImplicitActor,self).__init__()
         self.implicit_actor_config = implicit_actor_config
 
+        self.noise_dim = self.implicit_actor_config['noise_dim']
         self.action_num = self.implicit_actor_config['action_num']
 
         self.log_sig_min = self.implicit_actor_config['log_sig_min']
@@ -109,7 +110,8 @@ class ImplicitActor(Model):
         self.bijector = tfp.bijectors.Tanh()
 
     def call(self, state):
-        noise = self.noise(state)
+        # action 0
+        noise = tf.random.normal(shape=(state.shape[0], self.noise_dim), mean=0, stddev=1)
 
         l1 = self.l1(tf.concat([state, noise], axis=1))
         l2 = self.l2(l1)
@@ -122,12 +124,35 @@ class ImplicitActor(Model):
             bijector = self.bijector
             )
         action = tf.squeeze(dist.sample())
+
         log_prob_main = tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
-        log_prob_main = tf.reduce_sum(log_prob_main, axis=1, keepdims=True)
+        prob_main = tf.reduce_sum(tf.exp(log_prob_main), keepdims=True)
 
+        # actions
         state_repeat = tf.repeat(state, self.action_num, axis=0) # 2560, 24
+        action_repeat = tf.repeat(action, self.action_num, axis=0)
 
-        return mu, std
+        noise_actions = tf.random.normal(shape=(state.shape[0], self.noise_dim * self.action_num), mean=0, stddev=1)
+
+        l1_actions = self.l1(tf.concat([state_repeat, noise_actions], axis=1))
+        l2_actions = self.l2(l1_actions)
+        mu_actions = self.mu(l2_actions)
+        std_actions = self.mu(l2_actions)
+        std_actions = tf.exp(tf.clip_by_value(std_actions[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
+
+        dist_actions = tfp.distributions.TransfomedDistribution(
+            tfp.distributions.Normal(loc=mu_actions, scale=std_actions),
+            bijector = self.bijector
+            )
+
+        log_prob_actions = tf.clip_by_value(dist_actions.log_prob(action_repeat)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
+        log_prob_actions = tf.reduce_sum(log_prob_actions, axis=1, keepdims=True)
+        log_prob_actions = tf.reshape(log_prob_actions, shape=(state.shape[0], self.action_num))
+        prob_actions = tf.reduce_sum(tf.exp(log_prob_actions), keepdims=True)
+
+        log_prob = tf.math.log(tf.divide((prob_main + prob_actions + 1e-6) , (self.action_num + 1)))
+
+        return action, log_prob
 
 
 class DistCritic(Model):
@@ -142,25 +167,20 @@ class DistCritic(Model):
                  ):
         super(DistCritic,self,).__init__()
         self.quantile_num = quantile_num
+        self.noise_deim = noise_dim
+
         self.obs_space = self.obs_space
         self.action_space = self.action_space
 
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
 
-        self.noise = IDACDistCriticNoiseModel(self.quantile_num, self.noise_dim)
-        self.noise.build((None, self.obs_space + self.action_space))
-
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.value = Dense(1, activation=None)
 
-    def reset_noise(self):
-        self.noise.sample_weights()
-
     def call(self, state, action):
-        noise = self.noise(tf.concat([state, action], axis=1))
-
+        noise = tf.random.normal(shape=(state.shape[0], self.quantile_num*self.noise_dim), mean=0, stddev=1)
         state_repeat = tf.repeat(state, self.quantile_num, axis=0)
         action_repeat = tf.repeat(action, self.quantile_num, axis=0)
 
@@ -181,12 +201,17 @@ class Agent:
                 {
                     name, gamma, tau, update_freq, batch_size, warm_up, lr_actor, lr_critic,
                     buffer_size, use_PER, use_ERE, reward_normalize,
-                    alpha, qualtile_dim, target_entropy
+                    alpha, qualtile_dim, noise_dim, target_entropy
                     extension = {
-                        use_implicit_actor, use_automatic_entropy_tuning
-                        implicit_config: {
-                            actor_noise_num, actor_noise_dim, log_sig_min, log_sig_max,
-                            log_prob_min, log_prob_max
+                        use_implicit_actor, use_automatic_entropy_tuning,
+                        implicit_actor_config: {
+                            action_num, noise_dim, log_sig_min, log_sig_max, log_prob_min, log_prob_max
+                        },
+                        gaussian_actor_config: {
+                            noise_dim, log_sig_min, log_sig_max, log_prob_min, log_prob_max
+                        }
+                        automatic_alpha_config: {
+                            use_target_entropy, target_entropy
                         }
                     }
                 }
@@ -213,6 +238,8 @@ class Agent:
 
         self.gamma = self.agent_config['gamma']
         self.tau = self.agent_config['tau']
+        self.quantile_num = self.agent_config['quantile_num']
+        self.noise_dim = self.agent_config['noise_dim']
 
         self.update_step = 0
         self.update_freq = self.agent_config['update_freq']
@@ -228,22 +255,38 @@ class Agent:
         self.actor_lr_main = self.agent_config['lr_actor']
         self.critic_lr_main = self.agent_config['lr_critic']
 
+        self.critic_main_1, self.critic_main_2 = DistCritic(), DistCritic()
+        self.critic_target_1, self.critic_target_2 = DistCritic(), DistCritic()
+        self.critic_target_1.set_weights(self.critic_main_1.get_weights())
+        self.critic_target_2.set_weights(self.critic_main_2.get_weights())
+        self.critic_opt_main_1 = Adam(self.critic_lr_main)
+        self.critic_opt_main_2 = Adam(self.critic_lr_main)
+        self.critic_main_1.compile(optimizer=self.critic_opt_main_1)
+        self.critic_main_2.compile(optimizer=self.critic_opt_main_2)
+
         # extension config
         self.extension_config = self.agent_config['extension']
 
         if self.extension_config['use_implicit_actor']:
-            self.actor_main = ImplicitActor(self.extension_config['implicit_config'], self.obs_space, self.act_space)
+            self.actor_main = ImplicitActor(self.extension_config['implicit_actor_config'], self.obs_space, self.act_space)
+            self.actor_target = ImplicitActor(self.extension_config['implicit_actor_config'], self.obs_space, self.act_space)
+            self.actor_target.set_weights(self.actor_main.get_weights())
             self.actor_opt_main = Adam(self.actor_lr_main)
             self.actor_main.compile(optimizer=self.actor_opt_main)
         else:
-            self.actor_main = GaussianActor(self.obs_space, self.act_space)
+            self.actor_main = GaussianActor(self.extension_config['gaussian_actor_config'], self.obs_space, self.act_space)
             self.actor_opt_main = Adam(self.actor_lr_main)
             self.actor_main.compile(optimizer=self.actor_opt_main)
 
-        self.critic_main, self.critic_target = DistCritic(), DistCritic()
-        self.critic_target.set_weights(self.critic_main.get_weights())
-        self.critic_opt_main = Adam(self.critic_lr_main)
-        self.critic_main.compile(optimizer=self.critic_opt_main)
+        if self.extension_config['use_automatic_entropy_tuning']:
+            if self.extension_config['use_automatic_entropy_tuning']['use_target_entropy']:
+                self.target_entropy = self.extension_config['use_automatic_entropy_tuning']['target_entropy']
+            else:
+                self.target_entropy = -np.prod(self.act_space).item()
+            self.log_alpha = tf.Variable(0, trainable=True, dtype=tf.float32)
+            self.alpha_optimizer = Adam(self.actor_lr_main)
+        else:
+            self.alpha = self.agent_config['alpha']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
