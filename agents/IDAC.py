@@ -11,7 +11,6 @@ from tensorflow.keras.layers import Dense
 from utils.replay_buffer import ExperienceMemory
 from utils.prioritized_memory_numpy import PrioritizedMemory
 
-from agents.Noise_model import IDACGaussActorNoiseModel, IDACImplicitIActorNoiseModel, IDACDistCriticNoiseModel
 
 class GaussianActor(Model):
     """
@@ -31,14 +30,12 @@ class GaussianActor(Model):
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
 
         if self.gaussian_actor_config['use_reparam_trick']:
+            self.noise_dim  = self.gaussian_actor_config['noise_dim']
             self.log_sig_min = self.gaussian_actor_config['log_sig_min']
             self.log_sig_max = self.gaussian_actor_config['log_sig_max']
 
             self.log_prob_min = self.gaussian_actor_config['log_prob_min']
             self.log_prob_max = self.gaussian_actor_config['log_prob_max']
-
-            self.noise = IDACGaussActorNoiseModel(self.gaussian_actor_config['noise_dim'])
-            self.noise.build((None, self.obs_space))
         else:
             pass
 
@@ -47,12 +44,9 @@ class GaussianActor(Model):
 
         self.bijector = tfp.bijectors.Tanh()
 
-    def reset_noise(self):
-        self.noise.sample_weights()
-
     def call(self, state):
         if self.gaussian_actor_config['use_reparam_trick']:
-            noise = self.noise(state)
+            noise = tf.random.normal(shape=(state.shape[0] ,self.noise_dim),mean=0, stddev=1)
 
             l1 = self.l1(tf.concat([state, noise], axis=1))
             l2 = self.l2(l1)
@@ -92,6 +86,8 @@ class ImplicitActor(Model):
         super(ImplicitActor,self).__init__()
         self.implicit_actor_config = implicit_actor_config
 
+        self.action_num = self.implicit_actor_config['action_num']
+
         self.log_sig_min = self.implicit_actor_config['log_sig_min']
         self.log_sig_max = self.implicit_actor_config['log_sig_max']
 
@@ -107,16 +103,10 @@ class ImplicitActor(Model):
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
 
-        self.noise = IDACImplicitIActorNoiseModel(self.implicit_actor_config['noise_dim'])
-        self.noise.build((None, self.obs_space))
-
         self.mu = Dense(action_space, activation=None)
         self.std = Dense(action_space, activation=None)
 
         self.bijector = tfp.bijectors.Tanh()
-
-    def reset_noise(self):
-        self.noise.sample_weights()
 
     def call(self, state):
         noise = self.noise(state)
@@ -132,7 +122,10 @@ class ImplicitActor(Model):
             bijector = self.bijector
             )
         action = tf.squeeze(dist.sample())
-        log_prob = tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
+        log_prob_main = tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
+        log_prob_main = tf.reduce_sum(log_prob_main, axis=1, keepdims=True)
+
+        state_repeat = tf.repeat(state, self.action_num, axis=0) # 2560, 24
 
         return mu, std
 
