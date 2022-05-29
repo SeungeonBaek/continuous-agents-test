@@ -90,8 +90,8 @@ class IDACGaussActorNoiseModel(Layer):
         
         self.sample_weights()
 
-    def call(self, latent):
-        return tf.math.add(tf.matmul(latent, self.epsilon), self.b)
+    def call(self, state):
+        return tf.math.add(tf.matmul(state, self.epsilon), self.b)
 
     def get_std(self):
         return tf.where(

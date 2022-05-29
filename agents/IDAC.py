@@ -37,8 +37,8 @@ class GaussianActor(Model):
             self.log_prob_min = self.gaussian_actor_config['log_prob_min']
             self.log_prob_max = self.gaussian_actor_config['log_prob_max']
 
-            self.noise = IDACGaussActorNoiseModel()
-            self.noise.build((None, obs_space))
+            self.noise = IDACGaussActorNoiseModel(1)
+            self.noise.build((None, self.obs_space))
         else:
             pass
 
@@ -89,13 +89,33 @@ class ImplicitActor(Model):
                  obs_space,
                  action_space):
         super(ImplicitActor,self).__init__()
+        self.implicit_actor_config = implicit_actor_config
+
+        self.obs_space = obs_space
+        self.action_space = action_space
+
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
-        self.mu = Dense(action_space, activation='tanh')
-        self.std = Dense(action_space, activation='tanh')
+
+        if self.implicit_actor_config['use_reparam_trick']:
+            self.log_sig_min = self.implicit_actor_config['log_sig_min']
+            self.log_sig_max = self.implicit_actor_config['log_sig_max']
+
+            self.log_prob_min = self.implicit_actor_config['log_prob_min']
+            self.log_prob_max = self.implicit_actor_config['log_prob_max']
+
+            self.noise = IDACImplicitIActorNoiseModel(1)
+            self.noise.build((None, self.obs_space))
+        else:
+            pass
+
+        self.mu = Dense(action_space, activation=None)
+        self.std = Dense(action_space, activation=None)
+
+        self.bijector = tfp.bijectors.Tanh()
 
     def call(self, state):
         l1 = self.l1(state)
@@ -110,8 +130,14 @@ class DistCritic(Model):
     """
         Implicit Distributional Critic
     """
-    def __init__(self):
-        super(DistCritic,self).__init__()
+    def __init__(self,
+                 distributional_critic_config,
+                 obs_space,
+                 action_space,
+                 ):
+        super(DistCritic,self,).__init__()
+        self.distributional_critic_config = distributional_critic_config
+        
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
 
