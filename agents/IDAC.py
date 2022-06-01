@@ -74,6 +74,34 @@ class GaussianActor(Model):
 
         return action, log_prob
 
+    def sample(self, state):
+        if self.gaussian_actor_config['use_reparam_trick']:
+            noise = tf.random.normal(shape=(state.shape[0] ,self.noise_dim),mean=0, stddev=1)
+
+            l1 = self.l1(tf.concat([state, noise], axis=1))
+            l2 = self.l2(l1)
+            mu = self.mu(l2)
+            std = self.std(l2)
+            std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
+            dist = tfp.distributions.TransfomedDistribution(
+                tfp.distributions.Normal(loc=mu, scale=std),
+                bijector = self.bijector
+                )
+            action = tf.squeeze(dist.sample())
+        else:
+            l1 = self.l1(state)
+            l2 = self.l2(l1)
+            mu = self.mu(l2)
+            std = self.std(l2)
+            std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
+            dist = tfp.distributions.TransfomedDistribution(
+                tfp.distributions.Normal(loc=mu, scale=std),
+                bijector = self.bijector
+                )
+            action = tf.squeeze(dist.sample())
+
+        return action
+
 
 class ImplicitActor(Model):
     """
@@ -154,6 +182,22 @@ class ImplicitActor(Model):
 
         return action, log_prob
 
+    def sample(self, state):
+        noise = tf.random.normal(shape=(state.shape[0], self.noise_dim), mean=0, stddev=1)
+
+        l1 = self.l1(tf.concat([state, noise], axis=1))
+        l2 = self.l2(l1)
+        mu = self.mu(l2)
+        std = self.mu(l2)
+        std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
+
+        dist = tfp.distributions.TransfomedDistribution(
+            tfp.distributions.Normal(loc=mu, scale=std),
+            bijector = self.bijector
+            )
+        action = tf.squeeze(dist.sample())
+
+        return action
 
 class DistCritic(Model):
     """
@@ -291,59 +335,45 @@ class Agent:
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
         # print(f'in action, obs: {obs.shape}')
-        mu = self.actor_main(obs)
-        # print(f'in action, mu: {mu.shape}')
-
-        if self.update_step > self.warm_up:
-            std = tf.convert_to_tensor([self.std]*4, dtype=tf.float32)
-            dist = tfp.distributions.Normal(loc=mu, scale=std)
-            action = tf.squeeze(dist.sample())
-            action = action.numpy()
-            action = np.clip(action, mu.numpy()[0]-self.noise_clip, mu.numpy()[0]+self.noise_clip)
-
-            self.std = self.std * self.reduce_rate
-            # print(f'in action, action: {action}')
-        else:
-            action = mu.numpy()[0]
-            # print(f'in action, action: {action}')
-
-        action = np.clip(action, -1, 1)
+        raw_action = self.actor_main.sample(obs)
+        # print(f'in action, raw_action: {raw_action.shape}')
+        action = np.clip(raw_action.numpy(), -1, 1)
         # print(f'in action, clipped action: {action}')
-        
-        return action
-
-    def target_action(self, obs):
-        obs = tf.convert_to_tensor(obs, dtype=tf.float32)
-        # print(f'in trgt action, obs: {obs}')
-        mu = self.actor_target(obs)
-        # print(f'in trgt action, mu: {mu}')
-
-        if self.update_step > self.warm_up:
-            std = tf.convert_to_tensor([self.std]*4, dtype=tf.float32)
-            dist = tfp.distributions.Normal(loc=mu, scale=std)
-            action = tf.squeeze(dist.sample())
-
-        action = mu.numpy()
-        # print(f'in trgt action, action: {action}')
-        action = np.clip(action, -1, 1)
-        # print(f'in trgt action, clipped_action: {action}')
 
         return action
+
+    def sample_tau(self):
+        tau_raw = tf.random.uniform(shape=(self.batch_size, self.quantile_num), dtype=tf.float32) + 0.1
+        tau_raw = tf.divide(tau_raw ,tf.reduce_sum(tau_raw, axis=1, keepdims=True))
+
+        tau_hat_raw = tf.cumsum(tau_raw, axis=1).numpy()
+        tau_hat = np.zeros_like(tau_hat_raw)
+        tau_hat[:, 0:1] = tau_hat_raw[:, 0:1] / 2
+        tau_hat[:, 1:]  = (tau_hat_raw[:, 1:] + tau_hat_raw[:, :-1])/2
+
+        return tf.convert_to_tensor(tau_hat, dtype=tf.float32)
 
     def update_target(self):
-        actor_weights = []
+        actor_weithgs = []
         actor_targets = self.actor_target.get_weights()
         
         for idx, weight in enumerate(self.actor_main.get_weights()):
-            actor_weights.append(weight * self.tau + actor_targets[idx] * (1 - self.tau))
-        self.actor_target.set_weights(actor_weights)
+            actor_weithgs.append(weight * self.tau + actor_targets[idx] * (1 - self.tau))
+        self.actor_target.set_weights(actor_weithgs)
+
+        critic_1_weithgs = []
+        critic_targets_1 = self.critic_target_1.get_weights()
         
-        critic_weithgs = []
-        critic_targets = self.critic_target.get_weights()
+        for idx, weight in enumerate(self.critic_main_1.get_weights()):
+            critic_1_weithgs.append(weight * self.tau + critic_targets_1[idx] * (1 - self.tau))
+        self.critic_target_1.set_weights(critic_1_weithgs)
         
-        for idx, weight in enumerate(self.critic_main.get_weights()):
-            critic_weithgs.append(weight * self.tau + critic_targets[idx] * (1 - self.tau))
-        self.critic_target.set_weights(critic_weithgs)
+        critic_2_weithgs = []
+        critic_targets_2 = self.critic_target_2.get_weights()
+        
+        for idx, weight in enumerate(self.critic_main_2.get_weights()):
+            critic_2_weithgs.append(weight * self.tau + critic_targets_2[idx] * (1 - self.tau))
+        self.critic_target_2.set_weights(critic_2_weithgs)
 
     def update(self):
         if self.replay_buffer._len() < self.batch_size:
@@ -388,60 +418,88 @@ class Agent:
             actions = tf.convert_to_tensor(actions, dtype = tf.float32)
             dones = tf.convert_to_tensor(dones, dtype = tf.bool)
         
-        critic_variable = self.critic_main.trainable_variables
-        with tf.GradientTape() as tape_critic:
-            tape_critic.watch(critic_variable)
-            target_action = self.target_action(next_states)
-            # print(f'target_action : {target_action.shape}')
+        critic_variable_1 = self.critic_main_1.trainable_variables
+        critic_variable_2 = self.critic_main_2.trainable_variables
+        with tf.GradientTape() as tape_critic_1, tf.GradientTape() as tape_critic_2:
+            tape_critic_1.watch(critic_variable_1)
+            tape_critic_2.watch(critic_variable_2)
 
-            target_q_next = tf.squeeze(self.critic_target(tf.concat([next_states,target_action], 1)), 1)
+            target_actions, target_log_p = self.actor_target(next_states)
+            # print(f'target_action : {target_action.shape}')
+            # print(f'target_log_p : {target_log_p.shape}')
+
+            target_q_1_values = self.critic_target_1.sample(next_states, target_actions, self.quantile_num)
+            target_q_2_values = self.critic_target_2.sample(next_states, target_actions, self.quantile_num)
+            target_q_next = tf.minimum(target_q_1_values, target_q_2_values, axis=1) - tf.multiply(alpha, target_log_p)
+            # print(f'target_q_1_values : {target_q_1_values.shape}')
+            # print(f'target_q_2_values : {target_q_2_values.shape}')
             # print(f'target_q_next : {target_q_next.shape}')
 
             target_q = rewards + self.gamma * target_q_next * (1.0 - tf.cast(dones, dtype=tf.float32))
             # print(f'target_q : {target_q.shape}')
 
-            current_q = tf.squeeze(self.critic_main(tf.concat([states,actions], 1)), 1)
-            # print(f'current_q : {current_q.shape}')
+            tau_hat_1 = self.sample_tau()
+            tau_hat_2 = self.sample_tau()
+
+            current_q_1_values = self.critic_main_1.sample(states, actions, self.quantile_num)
+            current_q_2_values = self.critic_main_2.sample(states, actions, self.quantile_num)
+            # print(f'current_q_1_values : {current_q_1_values.shape}')
+            # print(f'current_q_2_values : {current_q_2_values.shape}')
         
-            td_error = tf.subtract(current_q, target_q)
-            # print(f'td_error : {td_error.shape}')
+            td_error_1 = None
+            td_error_2 = None
+            # print(f'td_error_1 : {td_error_1.shape}')
+            # print(f'td_error_2 : {td_error_2.shape}')
 
-            critic_losses = tf.cond(tf.convert_to_tensor(self.agent_config['use_PER'], dtype=tf.bool), \
-                    lambda: tf.multiply(is_weight, tf.math.square(td_error)), \
-                    lambda: tf.math.square(td_error))
-            # print(f'critic_losses : {critic_losses.shape}')
+            critic_losses_1 = tf.cond(tf.convert_to_tensor(self.agent_config['use_PER'], dtype=tf.bool), \
+                    lambda: tf.multiply(is_weight, tf.math.square(td_error_1)), \
+                    lambda: tf.math.square(td_error_1))
+            critic_losses_2 = tf.cond(tf.convert_to_tensor(self.agent_config['use_PER'], dtype=tf.bool), \
+                    lambda: tf.multiply(is_weight, tf.math.square(td_error_1)), \
+                    lambda: tf.math.square(td_error_1))
+            # print(f'critic_losses_1 : {critic_losses_1.shape}')
+            # print(f'critic_losses_2 : {critic_losses_2.shape}')
 
-            critic_loss = tf.math.reduce_mean(critic_losses)
-            # print(f'critic_loss : {critic_loss.shape}')
+            critic_loss_1 = tf.math.reduce_mean(critic_losses_1)
+            critic_loss_2 = tf.math.reduce_mean(critic_losses_2)
+            # print(f'critic_loss_1 : {critic_loss_1.shape}')
+            # print(f'critic_loss_2 : {critic_loss_2.shape}')
 
-        grads_critic, _ = tf.clip_by_global_norm(tape_critic.gradient(critic_loss, critic_variable), 0.5)
+        grads_critic_1, _ = tf.clip_by_global_norm(tape_critic_1.gradient(critic_loss_1, critic_variable_1), 0.5)
+        grads_critic_2, _ = tf.clip_by_global_norm(tape_critic_2.gradient(critic_loss_2, critic_variable_2), 0.5)
 
-        self.critic_opt_main.apply_gradients(zip(grads_critic, critic_variable))
+        self.critic_opt_main_1.apply_gradients(zip(grads_critic_1, critic_variable_1))
+        self.critic_opt_main_2.apply_gradients(zip(grads_critic_2, critic_variable_2))
 
         actor_variable = self.actor_main.trainable_variables       
         with tf.GradientTape() as tape_actor:
             tape_actor.watch(actor_variable)
 
-            new_policy_actions = self.actor_main(states)
-            actor_loss = -self.critic_main(tf.concat([states, new_policy_actions],1))
+            new_policy_actions, new_log_p = self.actor_main(states)
+            new_current_q_1 = tf.reduce_mean(self.critic_main_1(tf.concat([states, new_policy_actions],1)), axis=1, keepdims=True)
+            new_current_q_2 = tf.reduce_mean(self.critic_main_2(tf.concat([states, new_policy_actions],1)), axis=1, keepdims=True)
+
+            actor_loss = tf.multiply(alpha, new_log_p) - tf.minimum(new_current_q_1, new_current_q_2, axis=1)
             actor_loss = tf.math.reduce_mean(actor_loss)
             
         grads_actor, _ = tf.clip_by_global_norm(tape_actor.gradient(actor_loss, actor_variable), 0.5)
         self.actor_opt_main.apply_gradients(zip(grads_actor, actor_variable))
 
         target_q_val = tf.math.reduce_mean(target_q).numpy()
-        current_q_val = tf.math.reduce_mean(current_q).numpy()
-        criitic_loss_val = critic_loss.numpy()
+        current_q_1_val = tf.math.reduce_mean(current_q_1_values).numpy()
+        current_q_2_val = tf.math.reduce_mean(current_q_2_values).numpy()
+        criitic_loss_1_val = critic_loss_1.numpy()
+        criitic_loss_2_val = critic_loss_2.numpy()
         actor_loss_val = actor_loss.numpy()
         
         self.update_target()
 
-        td_error_numpy = np.abs(td_error.numpy())
+        td_error_numpy = np.abs(tf.add(td_error_1, td_error_2)/2).numpy()
         if self.agent_config['use_PER']:
             for i in range(self.batch_size):
                 self.replay_buffer.update(idxs[i], td_error_numpy[i])
 
-        return updated, actor_loss_val, criitic_loss_val, target_q_val, current_q_val
+        return updated, actor_loss_val, criitic_loss_1_val, criitic_loss_2_val, target_q_val, current_q_1_val, current_q_2_val
 
     def save_xp(self, state, next_state, reward, action, done):
         # Store transition in the replay buffer.
