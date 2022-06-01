@@ -353,6 +353,14 @@ class Agent:
 
         return tf.convert_to_tensor(tau_hat, dtype=tf.float32)
 
+    @tf.function
+    def quantile_regression_loss(self, current, target, tau, weight=1.0):
+        """
+        """
+        current = tf.expand_dims(current)
+        target = tf.expand_dims(target)
+        
+
     def update_target(self):
         actor_weithgs = []
         actor_targets = self.actor_target.get_weights()
