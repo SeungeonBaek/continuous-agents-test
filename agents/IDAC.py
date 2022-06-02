@@ -347,11 +347,19 @@ class Agent:
         tau_raw = tf.divide(tau_raw ,tf.reduce_sum(tau_raw, axis=1, keepdims=True))
 
         tau_hat_raw = tf.cumsum(tau_raw, axis=1).numpy()
-        tau_hat = np.zeros_like(tau_hat_raw)
-        tau_hat[:, 0:1] = tau_hat_raw[:, 0:1] / 2
-        tau_hat[:, 1:]  = (tau_hat_raw[:, 1:] + tau_hat_raw[:, :-1])/2
+        tau_hat_raw_left  = tf.concat([tf.zeros(shape=(self.batch_size, 1)), tau_hat_raw], axis=1)
+        tau_hat_raw_right = tf.concat([tau_hat_raw, tf.zeros(shape=(self.batch_size, 1))], axis=1)
 
-        return tf.convert_to_tensor(tau_hat, dtype=tf.float32)
+        tau_hat = tf.nest.map_structure(lambda x, y: (x + y) / 2, tau_hat_raw_left, tau_hat_raw_right)
+        tau_hat = tf.slice(tau_hat, [0,0], [self.batch_size, self.quantile_num])
+
+        return tau_hat
+
+        # tau_hat = np.zeros_like(tau_hat_raw)
+        # tau_hat[:, 0:1] = tau_hat_raw[:, 0:1] / 2
+        # tau_hat[:, 1:]  = (tau_hat_raw[:, 1:] + tau_hat_raw[:, :-1])/2
+
+        # return tf.convert_to_tensor(tau_hat, dtype=tf.float32)
 
     @tf.function
     def quantile_regression_loss(self, current, target, tau, weight=1.0):
