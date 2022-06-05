@@ -7,7 +7,6 @@ import gym
 import pandas as pd
 
 from tensorboardX import SummaryWriter
-import wandb
 
 from agent_env_config import env_agent_config
 from utils.rl_logger import RLLogger
@@ -83,7 +82,8 @@ def main(env_config: Dict, agent_config: Dict, rl_confing: Dict, data_save_path:
 
             prev_obs = obs
             prev_action = action
-            prev_log_policy = log_policy
+            if agent_config['agent_name'] == 'PPO':
+                prev_log_policy = log_policy
 
             if episode_step >= env_config['max_step']:
                 done = True
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     """
     
     env_switch = 1
-    agent_switch = 13
+    agent_switch = 13 # 13 => 14 => 17 => 15 => 16 => 18 순으로 테스트
 
     env_config, agent_config = env_agent_config(env_switch, agent_switch)
     
@@ -137,7 +137,11 @@ if __name__ == '__main__':
     data_save_path = parent_path + '\\results\\{env}\\{agent}\\{extension}_result\\'.format(env=env_config['env_name'], agent=agent_config['agent_name'], extension=agent_config['extension']['name']) + time_string + '\\'
 
     summary_writer = SummaryWriter(result_path+'/tensorboard/')
-    wandb_session = wandb.init(project="RL-test-2", job_type="train", name=time_string)
+    if rl_config['wandb'] == True:
+        import wandb
+        wandb_session = wandb.init(project="RL-test-2", job_type="train", name=time_string)
+    else:
+        wandb_session = None
 
     rl_logger = RLLogger(agent_config, rl_config, summary_writer, wandb_session)
     rl_loader = RLLoader(env_config, agent_config)

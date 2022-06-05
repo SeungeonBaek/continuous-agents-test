@@ -1,6 +1,3 @@
-import wandb
-
-
 class RLLogger():
     def __init__(self, agent_config, rl_config, summary_writer = None, wandb_session = None):
         self.agent_config = agent_config
@@ -45,6 +42,9 @@ class RLLogger():
             else:
                 updated, actor_loss, critic_loss, trgt_q_mean, critic_value, critic_q_value = Agent.update()
 
+        elif self.agent_config['agent_name'] == 'IDAC':
+            updated, alpha_loss, actor_loss, critic_1_loss, critic_2_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
+
         if self.agent_config['agent_name'] == 'DDPG':
             if updated:
                 self.summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
@@ -60,10 +60,19 @@ class RLLogger():
                 self.summary_writer.add_scalar('02_Critic/Critic_2_value', critic_2_value, Agent.update_step)
         elif self.agent_config['agent_name'] == 'SAC':
             if updated:
-                self.summary_writer.add_scalar('01_Loss/Critic_1_loss', critic_loss, Agent.update_step)
+                self.summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
                 self.summary_writer.add_scalar('01_Loss/Actor_loss', actor_loss, Agent.update_step)
                 self.summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
-                self.summary_writer.add_scalar('02_Critic/Critic_1_value', critic_value, Agent.update_step)
+                self.summary_writer.add_scalar('02_Critic/Critic_value', critic_value, Agent.update_step)
+        elif self.agent_config['agent_name'] == 'IDAC':
+            if updated:
+                self.summary_writer.add_scalar('01_Loss/Critic_1_loss', critic_1_loss, Agent.update_step)
+                self.summary_writer.add_scalar('01_Loss/Critic_2_loss', critic_2_loss, Agent.update_step)
+                self.summary_writer.add_scalar('01_Loss/Actor_loss', actor_loss, Agent.update_step)
+                self.summary_writer.add_scalar('01_Loss/Alpha_loss', alpha_loss, Agent.update_step)
+                self.summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
+                self.summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
+                self.summary_writer.add_scalar('02_Critic/Critic_2_value', critic_2_value, Agent.update_step)
 
     def step_logging_wandb(self, Agent):
         if self.agent_config['agent_name'] == 'DDPG':
@@ -83,10 +92,14 @@ class RLLogger():
         elif self.agent_config['agent_name'] == 'SAC':
             updated, critic_1_loss, critic_2_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
 
+        elif self.agent_config['agent_name'] == 'IDAC':
+            updated, alpha_loss, actor_loss, critic_1_loss, critic_2_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
+
         if self.agent_config['agent_name'] == 'DDPG':
             if updated:
                 self.wandb_session.log({
                     "01_Loss/Critic_loss": critic_loss,
+                    "01_Loss/Actor_loss": actor_loss,
                     '02_Critic/Target_Q_mean': trgt_q_mean, 
                     '02_Critic/Critic_value': critic_value
                 }, step=self.Agent.update_step)
@@ -94,8 +107,10 @@ class RLLogger():
             if updated:
                 self.wandb_session.log({
                     "01_Loss/Critic_loss": critic_loss,
-                    '02_Critic/Target_Q_mean': trgt_q_mean, 
-                    '02_Critic/Critic_value': critic_value
+                    "01_Loss/Actor_loss": actor_loss,
+                    '02_Critic/Target_Q_mean': trgt_q_mean,
+                    '02_Critic/Critic_1_value': critic_1_value,
+                    '02_Critic/Critic_2_value': critic_2_value,
                 }, step=self.Agent.update_step)
         elif self.agent_config['agent_name'] == 'PPO':
             if updated:
@@ -108,8 +123,20 @@ class RLLogger():
             if updated:
                 self.wandb_session.log({
                     "01_Loss/Critic_loss": critic_loss,
+                    "01_Loss/Actor_loss": actor_loss,
                     '02_Critic/Target_Q_mean': trgt_q_mean, 
                     '02_Critic/Critic_value': critic_value
+                }, step=self.Agent.update_step)
+        elif self.agent_config['agent_name'] == 'IDAC':
+            if updated:
+                self.wandb_session.log({
+                    "01_Loss/Critic_1_loss": critic_1_loss,
+                    "01_Loss/Critic_1_loss": critic_2_loss,
+                    "01_Loss/Actor_loss": actor_loss,
+                    "01_Loss/Alpha_loss": alpha_loss,
+                    '02_Critic/Target_Q_mean': trgt_q_mean, 
+                    '02_Critic/Critic_1_value': critic_1_value,
+                    '02_Critic/Critic_2_value': critic_2_value
                 }, step=self.Agent.update_step)
 
     def episode_logging_tensorboard(self, Agent, episode_score, episode_step, episode_num, episode_rewards):
@@ -163,5 +190,5 @@ class RLLogger():
             "episode_num": episode_num
         })
 
-        histogram = wandb.Histogram(episode_rewards)
+        histogram = self.wandb.Histogram(episode_rewards)
         self.wandb_session.log({"reward_hist": histogram})
