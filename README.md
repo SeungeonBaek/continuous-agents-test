@@ -14,7 +14,10 @@ TD3
 
 ## distributional DDPG
 SDPG  (...working)  
-IDAC (...working)  
+IDAC (gaussian policy, no alpha, no reparam)  
+IDAC (gaussian policy, no alpha, reparam => ...working)  
+IDAC (implicit policy, no alpha)  
+IDAC (implicit policy, no alpha => ...working)  
 
 ## others
 PPO (...working)  
@@ -25,7 +28,7 @@ Still not selected
 
 ## for others
 MEPPO (...working)  
-gSDE(for DDPG, TD3, SAC) (...refactoring)
+gSDE(for DDPG, TD3, SAC) (...refactoring)  
 TQC(for DDPG, TD3, SAC) (...working)  
 
 ## License
@@ -36,19 +39,25 @@ Please 'just' use these code and just 'refer' the url of repository in any form.
 
 [MIT License](./LICENSE)
 
-## Reference
+## Reference - paper
 
-[1] []()
+[1] [DDPG](https://arxiv.org/pdf/1509.02971.pdf)
+
+[2] [TD3](https://arxiv.org/pdf/1802.09477.pdf)
+
+[3] [SDPG](https://arxiv.org/pdf/2001.02652.pdf)
+
+[4] [IDAC](https://arxiv.org/pdf/2007.06159v2.pdf)
+
+[6] [PPO](https://arxiv.org/abs/1707.06347)
+
+[7] [SAC](https://arxiv.org/abs/1801.01290)
+
+## Reference - github
+
+[1] [IDAC - official code](https://github.com/zhougroup/IDAC)
 
 [2] []()
-
-[3] []()
-
-[4] []()
-
-[5] []()
-
-[6] []()
 
 ------------
 # Maintainers
