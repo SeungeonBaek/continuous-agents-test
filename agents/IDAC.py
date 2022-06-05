@@ -188,50 +188,52 @@ class ImplicitActor(Model):
     def call(self, state):
         # action 0
         noise = tf.random.normal(shape=(state.shape[0], self.noise_dim), mean=0, stddev=1)
-        print(f'in implicit actor, noise: {noise.shape}')
+        # print(f'in implicit actor, in call, noise: {noise.shape}')
 
         l1 = self.l1(tf.concat([state, noise], axis=1))
-        print(f'in implicit actor, l1: {l1.shape}')
+        # print(f'in implicit actor, in call, l1: {l1.shape}')
         l2 = self.l2(l1)
-        print(f'in implicit actor, l2: {l2.shape}')
+        # print(f'in implicit actor, in call, l2: {l2.shape}')
         mu = self.mu(l2)
-        print(f'in implicit actor, mu: {mu.shape}')
+        # print(f'in implicit actor, in call, mu: {mu.shape}')
         std = self.mu(l2)
-        print(f'in implicit actor, std: {std.shape}')
+        # print(f'in implicit actor, in call, std: {std.shape}')
         std = tf.squeeze(tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max)), axis=2)
-        print(f'in implicit actor, std: {std.shape}')
+        # print(f'in implicit actor, in call, std: {std.shape}')
 
         dist = tfp.distributions.TransformedDistribution(
             tfp.distributions.Normal(loc=mu, scale=std),
             bijector = self.bijector
             )
-        action = tf.squeeze(dist.sample())
-        print(f'in implicit actor, action: {action.shape}')
+        action = tf.squeeze(tf.clip_by_value(dist.sample()[..., tf.newaxis], -1+1e-6, 1-1e-6))
+        # print(f'in implicit actor, in call, action: {action.shape}')
 
         log_prob_main = tf.squeeze(tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max), axis=2)
-        print(f'in implicit actor, log_prob_main: {log_prob_main.shape}')
-        prob_main = tf.reduce_sum(tf.exp(log_prob_main), keepdims=True)
-        print(f'in implicit actor, prob_main: {prob_main.shape}')
+        # print(f'in implicit actor, in call, log_prob_main: {log_prob_main.shape}')
+        tf.debugging.check_numerics(log_prob_main, message=f'log_prob_main is not numeric, {log_prob_main}')
+        prob_main = tf.reduce_sum(tf.exp(log_prob_main), axis=1, keepdims=True)
+        # print(f'in implicit actor, in call, prob_main: {prob_main.shape}')
+        # tf.debugging.check_numerics(prob_main, message=f'prob_main is not numeric, {prob_main}')
 
         # actions
-        state_repeat = tf.repeat(state, self.action_num, axis=0) # 2560, 24
-        print(f'in implicit actor, state_repeat: {state_repeat.shape}')
+        state_repeat = tf.repeat(state, self.action_num, axis=0)
+        # print(f'in implicit actor, in call, state_repeat: {state_repeat.shape}')
         action_repeat = tf.repeat(action, self.action_num, axis=0)
-        print(f'in implicit actor, action_repeat: {action_repeat.shape}')
+        # print(f'in implicit actor, in call, action_repeat: {action_repeat.shape}')
 
-        noise_actions = tf.random.normal(shape=(state.shape[0], self.noise_dim * self.action_num), mean=0, stddev=1)
-        print(f'in implicit actor, noise_actions: {noise_actions.shape}')
+        noise_actions = tf.random.normal(shape=(state.shape[0] * self.action_num, self.noise_dim), mean=0, stddev=1)
+        # print(f'in implicit actor, in call, noise_actions: {noise_actions.shape}')
 
         l1_actions = self.l1(tf.concat([state_repeat, noise_actions], axis=1))
-        print(f'in implicit actor, l1_actions: {l1_actions.shape}')
+        # print(f'in implicit actor, in call, l1_actions: {l1_actions.shape}')
         l2_actions = self.l2(l1_actions)
-        print(f'in implicit actor, l2_actions: {l2_actions.shape}')
+        # print(f'in implicit actor, in call, l2_actions: {l2_actions.shape}')
         mu_actions = self.mu(l2_actions)
-        print(f'in implicit actor, mu_actions: {mu_actions.shape}')
+        # print(f'in implicit actor, in call, mu_actions: {mu_actions.shape}')
         std_actions = self.mu(l2_actions)
-        print(f'in implicit actor, std_actions: {std_actions.shape}')
+        # print(f'in implicit actor, in call, std_actions: {std_actions.shape}')
         std_actions = tf.squeeze(tf.exp(tf.clip_by_value(std_actions[..., tf.newaxis], self.log_sig_min, self.log_sig_max)), axis=2)
-        print(f'in implicit actor, std_actions: {std_actions.shape}')
+        # print(f'in implicit actor, in call, std_actions: {std_actions.shape}')
 
         dist_actions = tfp.distributions.TransformedDistribution(
             tfp.distributions.Normal(loc=mu_actions, scale=std_actions),
@@ -239,40 +241,45 @@ class ImplicitActor(Model):
             )
 
         log_prob_actions = tf.squeeze(tf.clip_by_value(dist_actions.log_prob(action_repeat)[..., tf.newaxis], self.log_prob_min, self.log_prob_max), axis=2)
-        print(f'in implicit actor, log_prob_actions: {log_prob_actions.shape}')
+        # print(f'in implicit actor, in call, log_prob_actions: {log_prob_actions.shape}')
+        tf.debugging.check_numerics(log_prob_actions, message=f'log_prob_actions is not numeric, {log_prob_actions}')
         log_prob_actions = tf.reduce_sum(log_prob_actions, axis=1, keepdims=True)
-        print(f'in implicit actor, log_prob_actions: {log_prob_actions.shape}')
+        # print(f'in implicit actor, in call, log_prob_actions: {log_prob_actions.shape}')
+        # tf.debugging.check_numerics(log_prob_actions, message=f'log_prob_actions is not numeric, {log_prob_actions}')
         log_prob_actions = tf.reshape(log_prob_actions, shape=(state.shape[0], self.action_num))
-        print(f'in implicit actor, log_prob_actions: {log_prob_actions.shape}')
-        prob_actions = tf.reduce_sum(tf.exp(log_prob_actions), keepdims=True)
-        print(f'in implicit actor, prob_actions: {prob_actions.shape}')
+        # print(f'in implicit actor, in call, log_prob_actions: {log_prob_actions.shape}')
+        # tf.debugging.check_numerics(log_prob_actions, message=f'log_prob_actions is not numeric, {log_prob_actions}')
+        prob_actions = tf.reduce_sum(tf.exp(log_prob_actions), axis=1, keepdims=True)
+        # print(f'in implicit actor, in call, prob_actions: {prob_actions.shape}')
+        # tf.debugging.check_numerics(prob_actions, message=f'prob_actions is not numeric, {prob_actions}')
 
         log_prob = tf.math.log(tf.divide((prob_main + prob_actions + 1e-6) , (self.action_num + 1)))
-        print(f'in implicit actor, log_prob: {log_prob.shape}')
+        # print(f'in implicit actor, in call, log_prob: {log_prob.shape}')
+        tf.debugging.check_numerics(log_prob, message=f'log_prob is not numeric, {log_prob}')
 
         return action, log_prob
 
     def sample(self, state):
         noise = tf.random.normal(shape=(state.shape[0], self.noise_dim), mean=0, stddev=1)
-        print(f'in implicit actor, noise: {noise.shape}')
+        # print(f'in implicit actor, in sample, noise: {noise.shape}')
 
         l1 = self.l1(tf.concat([state, noise], axis=1))
-        print(f'in implicit actor, l1: {l1.shape}')
+        # print(f'in implicit actor, in sample, l1: {l1.shape}')
         l2 = self.l2(l1)
-        print(f'in implicit actor, l2: {l2.shape}')
+        # print(f'in implicit actor, in sample, l2: {l2.shape}')
         mu = self.mu(l2)
-        print(f'in implicit actor, mu: {mu.shape}')
+        # print(f'in implicit actor, in sample, mu: {mu.shape}')
         std = self.mu(l2)
-        print(f'in implicit actor, std: {std.shape}')
+        # print(f'in implicit actor, in sample, std: {std.shape}')
         std = tf.squeeze(tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max)), axis=2)
-        print(f'in implicit actor, std: {std.shape}')
+        # print(f'in implicit actor, in sample, std: {std.shape}')
 
         dist = tfp.distributions.TransformedDistribution(
             tfp.distributions.Normal(loc=mu, scale=std),
             bijector = self.bijector
             )
         action = tf.squeeze(dist.sample())
-        print(f'in implicit actor, action: {action.shape}')
+        # print(f'in implicit actor, action: {action.shape}')
 
         return action
 
@@ -556,43 +563,43 @@ class Agent:
             target_actions, target_log_p = self.actor_target(next_states)
             # print(f'target_actions : {target_actions.shape}')
             # print(f'target_log_p : {target_log_p.shape}')
-            tf.debugging.check_numerics(target_actions, message='target_actions is not numeric')
-            tf.debugging.check_numerics(target_log_p, message='target_log_p is not numeric')
+            # tf.debugging.check_numerics(target_actions, message='target_actions is not numeric')
+            # tf.debugging.check_numerics(target_log_p, message='target_log_p is not numeric')
 
             target_q_1_values = self.critic_target_1(next_states, target_actions)
             target_q_2_values = self.critic_target_2(next_states, target_actions)
             target_q_next = tf.stop_gradient(tf.minimum(target_q_1_values, target_q_2_values) - tf.multiply(alpha, target_log_p))
             # print(f'target_q_values : {target_q_1_values.shape}, {target_q_2_values.shape}')
             # print(f'target_q_next : {target_q_next.shape}')
-            tf.debugging.check_numerics(target_q_1_values, message='target_q_1_values is not numeric')
-            tf.debugging.check_numerics(target_q_2_values, message='target_q_2_values is not numeric')
-            tf.debugging.check_numerics(target_q_next, message='target_q_next is not numeric')
+            # tf.debugging.check_numerics(target_q_1_values, message='target_q_1_values is not numeric')
+            # tf.debugging.check_numerics(target_q_2_values, message='target_q_2_values is not numeric')
+            # tf.debugging.check_numerics(target_q_next, message='target_q_next is not numeric')
 
             target_q = tf.expand_dims(rewards, axis=1) + self.gamma * target_q_next * tf.expand_dims((1.0 - tf.cast(dones, dtype=tf.float32)), axis=1)
             # print(f'target_q : {target_q.shape}')
-            tf.debugging.check_numerics(target_q, message='target_q is not numeric')
+            # tf.debugging.check_numerics(target_q, message='target_q is not numeric')
 
             tau_1_hat = self.sample_tau()
             tau_2_hat = self.sample_tau()
             # print(f'tau_hat : {tau_1_hat.shape}, {tau_2_hat.shape}')
-            tf.debugging.check_numerics(tau_1_hat, message='tau_1_hat is not numeric')
-            tf.debugging.check_numerics(tau_2_hat, message='tau_2_hat is not numeric')
+            # tf.debugging.check_numerics(tau_1_hat, message='tau_1_hat is not numeric')
+            # tf.debugging.check_numerics(tau_2_hat, message='tau_2_hat is not numeric')
 
             current_q_1_values = self.critic_main_1(states, actions)
             current_q_2_values = self.critic_main_2(states, actions)
             # print(f'current_q_values : {current_q_1_values.shape}, {current_q_2_values.shape}')
-            tf.debugging.check_numerics(current_q_1_values, message='current_q_1_values is not numeric')
-            tf.debugging.check_numerics(current_q_2_values, message='current_q_2_values is not numeric')
+            # tf.debugging.check_numerics(current_q_1_values, message='current_q_1_values is not numeric')
+            # tf.debugging.check_numerics(current_q_2_values, message='current_q_2_values is not numeric')
 
             current_1_tile = tf.tile(tf.expand_dims(current_q_1_values, axis=2), [1, 1, self.quantile_num])
             current_2_tile = tf.tile(tf.expand_dims(current_q_2_values, axis=2), [1, 1, self.quantile_num])
             # print(f'in QR Loss, current_tile: {current_1_tile.shape}, {current_2_tile.shape}')
-            tf.debugging.check_numerics(current_1_tile, message='current_1_tile is not numeric')
-            tf.debugging.check_numerics(current_2_tile, message='current_2_tile is not numeric')
+            # tf.debugging.check_numerics(current_1_tile, message='current_1_tile is not numeric')
+            # tf.debugging.check_numerics(current_2_tile, message='current_2_tile is not numeric')
 
             target_tile = tf.tile(tf.expand_dims(target_q, axis=1), [1, self.quantile_num, 1])
             # print(f'in QR Loss, target_tile: {target_tile.shape}')
-            tf.debugging.check_numerics(target_tile, message='target_tile is not numeric')
+            # tf.debugging.check_numerics(target_tile, message='target_tile is not numeric')
 
             tau_1_hat_expand = tf.expand_dims(tau_1_hat, axis=2)
             tau_2_hat_expand = tf.expand_dims(tau_2_hat, axis=2)
@@ -604,32 +611,32 @@ class Agent:
             td_loss_1 = tf.subtract(target_tile, current_1_tile)
             td_loss_2 = tf.subtract(target_tile, current_2_tile)
             # print(f'in QR Loss, td_loss: {td_loss_1.shape}, {td_loss_2.shape}')
-            tf.debugging.check_numerics(td_loss_1, message='td_loss_1 is not numeric')
-            tf.debugging.check_numerics(td_loss_2, message='td_loss_2 is not numeric')
+            # tf.debugging.check_numerics(td_loss_1, message='td_loss_1 is not numeric')
+            # tf.debugging.check_numerics(td_loss_2, message='td_loss_2 is not numeric')
 
             huber_loss_1 = tf.where(tf.less(td_loss_1, 1.0), 1/2 * tf.math.square(td_loss_1), 1.0 * tf.abs(td_loss_1 - 1.0 * 1/2))
             huber_loss_2 = tf.where(tf.less(td_loss_2, 1.0), 1/2 * tf.math.square(td_loss_2), 1.0 * tf.abs(td_loss_2 - 1.0 * 1/2))
             # print(f'in QR Loss, huber_loss: {huber_loss_1.shape}, {huber_loss_2.shape}')
-            tf.debugging.check_numerics(huber_loss_1, message='huber_loss_1 is not numeric')
-            tf.debugging.check_numerics(huber_loss_2, message='huber_loss_2 is not numeric')
+            # tf.debugging.check_numerics(huber_loss_1, message='huber_loss_1 is not numeric')
+            # tf.debugging.check_numerics(huber_loss_2, message='huber_loss_2 is not numeric')
 
             sign_1 = tf.sign(target_tile - current_1_tile)
             sign_2 = tf.sign(target_tile - current_2_tile)
             # print(f'in QR Loss, sign: {sign_1.shape}, {sign_2.shape}')
-            tf.debugging.check_numerics(sign_1, message='sign_1 is not numeric')
-            tf.debugging.check_numerics(sign_2, message='sign_2 is not numeric')
+            # tf.debugging.check_numerics(sign_1, message='sign_1 is not numeric')
+            # tf.debugging.check_numerics(sign_2, message='sign_2 is not numeric')
 
             rho_1 = tf.where(tf.less(sign_1, 0.0), tf.multiply(inv_tau_1 , huber_loss_1), tf.multiply(tau_1_hat_expand , huber_loss_1))
             rho_2 = tf.where(tf.less(sign_2, 0.0), tf.multiply(inv_tau_2 , huber_loss_2), tf.multiply(tau_2_hat_expand , huber_loss_2))
             # print(f'rho : {rho_1.shape}, {rho_2.shape}')
-            tf.debugging.check_numerics(rho_1, message='rho_1 is not numeric')
-            tf.debugging.check_numerics(rho_2, message='rho_2 is not numeric')
+            # tf.debugging.check_numerics(rho_1, message='rho_1 is not numeric')
+            # tf.debugging.check_numerics(rho_2, message='rho_2 is not numeric')
 
             td_error_1 = tf.reduce_mean(tf.reduce_sum(rho_1, axis = 2), axis=1)
             td_error_2 = tf.reduce_mean(tf.reduce_sum(rho_2, axis = 2), axis=1)
             # print(f'td_error : {td_error_1.shape}, {td_error_2.shape}')
-            tf.debugging.check_numerics(td_error_1, message='td_error_1 is not numeric')
-            tf.debugging.check_numerics(td_error_2, message='td_error_2 is not numeric')
+            # tf.debugging.check_numerics(td_error_1, message='td_error_1 is not numeric')
+            # tf.debugging.check_numerics(td_error_2, message='td_error_2 is not numeric')
 
             critic_losses_1 = tf.cond(tf.convert_to_tensor(self.agent_config['use_PER'], dtype=tf.bool), \
                     lambda: tf.multiply(is_weight, tf.math.square(td_error_1)), \
@@ -638,14 +645,14 @@ class Agent:
                     lambda: tf.multiply(is_weight, tf.math.square(td_error_2)), \
                     lambda: tf.math.square(td_error_2))
             # print(f'critic_losses : {critic_losses_1.shape}, {critic_losses_2.shape}')
-            tf.debugging.check_numerics(critic_losses_1, message='critic_losses_1 is not numeric')
-            tf.debugging.check_numerics(critic_losses_2, message='critic_losses_2 is not numeric')
+            # tf.debugging.check_numerics(critic_losses_1, message='critic_losses_1 is not numeric')
+            # tf.debugging.check_numerics(critic_losses_2, message='critic_losses_2 is not numeric')
 
             critic_loss_1 = tf.math.reduce_mean(critic_losses_1)
             critic_loss_2 = tf.math.reduce_mean(critic_losses_2)
             # print(f'critic_loss : {critic_loss_1.shape}, {critic_loss_2.shape}')
-            tf.debugging.check_numerics(critic_loss_1, message='critic_loss_1 is not numeric')
-            tf.debugging.check_numerics(critic_loss_2, message='critic_loss_2 is not numeric')
+            # tf.debugging.check_numerics(critic_loss_1, message='critic_loss_1 is not numeric')
+            # tf.debugging.check_numerics(critic_loss_2, message='critic_loss_2 is not numeric')
 
         grads_critic_1, _ = tf.clip_by_global_norm(tape_critic_1.gradient(critic_loss_1, critic_variable_1), 0.5)
         grads_critic_2, _ = tf.clip_by_global_norm(tape_critic_2.gradient(critic_loss_2, critic_variable_2), 0.5)
@@ -660,25 +667,26 @@ class Agent:
             new_policy_actions, new_log_p = self.actor_main(states)
             # print(f'new_policy_actions : {new_policy_actions.shape}')
             # print(f'new_log_p : {new_log_p.shape}')
-            tf.debugging.check_numerics(new_policy_actions, message='new_policy_actions is not numeric')
-            tf.debugging.check_numerics(new_log_p, message='new_log_p is not numeric')
+            # tf.debugging.check_numerics(new_policy_actions, message='new_policy_actions is not numeric')
+            # tf.debugging.check_numerics(new_log_p, message='new_log_p is not numeric')
 
             new_current_q_1 = self.critic_main_1(states, new_policy_actions)
             new_current_q_2 = self.critic_main_2(states, new_policy_actions)
             # print(f'new_current_q_1 : {new_current_q_1.shape}')
             # print(f'new_current_q_2 : {new_current_q_2.shape}')
-            tf.debugging.check_numerics(new_current_q_1, message='new_current_q_1 is not numeric')
-            tf.debugging.check_numerics(new_current_q_2, message='new_current_q_2 is not numeric')
+            # tf.debugging.check_numerics(new_current_q_1, message='new_current_q_1 is not numeric')
+            # tf.debugging.check_numerics(new_current_q_2, message='new_current_q_2 is not numeric')
 
             new_current_q = tf.multiply(alpha, new_log_p) - tf.minimum(new_current_q_1, new_current_q_2)
-            tf.debugging.check_numerics(new_current_q_2, message='new_current_q_2 is not numeric')
+            # print(f'new_current_q : {new_current_q.shape}')
+            # tf.debugging.check_numerics(new_current_q_2, message='new_current_q_2 is not numeric')
 
             actor_losses = tf.reduce_mean(new_current_q, axis=1)
             # print(f'actor_losses : {actor_losses.shape}')
-            tf.debugging.check_numerics(actor_losses, message='actor_losses is not numeric')
+            # tf.debugging.check_numerics(actor_losses, message='actor_losses is not numeric')
             actor_loss = tf.reduce_mean(actor_losses)
             # print(f'actor_loss : {actor_loss.shape}')
-            tf.debugging.check_numerics(actor_loss, message='actor_loss is not numeric')
+            # tf.debugging.check_numerics(actor_loss, message='actor_loss is not numeric')
             
         grads_actor, _ = tf.clip_by_global_norm(tape_actor.gradient(actor_loss, actor_variable), 0.5)
         self.actor_opt_main.apply_gradients(zip(grads_actor, actor_variable))
