@@ -8,7 +8,6 @@ from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.losses import Huber
-from tensorflow.keras.losses import Reduction
 
 from utils.replay_buffer import ExperienceMemory
 from utils.prioritized_memory_numpy import PrioritizedMemory
@@ -33,13 +32,13 @@ class GaussianActor(Model):
 
         if self.gaussian_actor_config['use_reparam_trick']:
             self.noise_dim  = self.gaussian_actor_config['noise_dim']
-            self.log_sig_min = self.gaussian_actor_config['log_sig_min']
-            self.log_sig_max = self.gaussian_actor_config['log_sig_max']
-
-            self.log_prob_min = self.gaussian_actor_config['log_prob_min']
-            self.log_prob_max = self.gaussian_actor_config['log_prob_max']
         else:
             pass
+
+        self.log_sig_min = self.gaussian_actor_config['log_sig_min']
+        self.log_sig_max = self.gaussian_actor_config['log_sig_max']
+        self.log_prob_min = self.gaussian_actor_config['log_prob_min']
+        self.log_prob_max = self.gaussian_actor_config['log_prob_max']
 
         self.mu = Dense(action_space, activation=None)
         self.std = Dense(action_space, activation=None)
@@ -55,7 +54,7 @@ class GaussianActor(Model):
             mu = self.mu(l2)
             std = self.std(l2)
             std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
-            dist = tfp.distributions.TransfomedDistribution(
+            dist = tfp.distributions.TransformedDistribution(
                 tfp.distributions.Normal(loc=mu, scale=std),
                 bijector = self.bijector
                 )
@@ -67,7 +66,7 @@ class GaussianActor(Model):
             mu = self.mu(l2)
             std = self.std(l2)
             std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
-            dist = tfp.distributions.TransfomedDistribution(
+            dist = tfp.distributions.TransformedDistribution(
                 tfp.distributions.Normal(loc=mu, scale=std),
                 bijector = self.bijector
                 )
@@ -85,7 +84,7 @@ class GaussianActor(Model):
             mu = self.mu(l2)
             std = self.std(l2)
             std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
-            dist = tfp.distributions.TransfomedDistribution(
+            dist = tfp.distributions.TransformedDistribution(
                 tfp.distributions.Normal(loc=mu, scale=std),
                 bijector = self.bijector
                 )
@@ -96,7 +95,7 @@ class GaussianActor(Model):
             mu = self.mu(l2)
             std = self.std(l2)
             std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
-            dist = tfp.distributions.TransfomedDistribution(
+            dist = tfp.distributions.TransformedDistribution(
                 tfp.distributions.Normal(loc=mu, scale=std),
                 bijector = self.bijector
                 )
@@ -149,7 +148,7 @@ class ImplicitActor(Model):
         std = self.mu(l2)
         std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
 
-        dist = tfp.distributions.TransfomedDistribution(
+        dist = tfp.distributions.TransformedDistribution(
             tfp.distributions.Normal(loc=mu, scale=std),
             bijector = self.bijector
             )
@@ -170,7 +169,7 @@ class ImplicitActor(Model):
         std_actions = self.mu(l2_actions)
         std_actions = tf.exp(tf.clip_by_value(std_actions[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
 
-        dist_actions = tfp.distributions.TransfomedDistribution(
+        dist_actions = tfp.distributions.TransformedDistribution(
             tfp.distributions.Normal(loc=mu_actions, scale=std_actions),
             bijector = self.bijector
             )
@@ -193,7 +192,7 @@ class ImplicitActor(Model):
         std = self.mu(l2)
         std = tf.exp(tf.clip_by_value(std[..., tf.newaxis], self.log_sig_min, self.log_sig_max))
 
-        dist = tfp.distributions.TransfomedDistribution(
+        dist = tfp.distributions.TransformedDistribution(
             tfp.distributions.Normal(loc=mu, scale=std),
             bijector = self.bijector
             )
@@ -215,8 +214,8 @@ class DistCritic(Model):
         self.quantile_num = quantile_num
         self.noise_deim = noise_dim
 
-        self.obs_space = self.obs_space
-        self.action_space = self.action_space
+        self.obs_space = obs_space
+        self.action_space = action_space
 
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
@@ -301,8 +300,16 @@ class Agent:
         self.actor_lr_main = self.agent_config['lr_actor']
         self.critic_lr_main = self.agent_config['lr_critic']
 
-        self.critic_main_1, self.critic_main_2 = DistCritic(), DistCritic()
-        self.critic_target_1, self.critic_target_2 = DistCritic(), DistCritic()
+                #  quantile_num,
+                #  noise_dim,
+                #  obs_space,
+                #  action_space,
+
+        self.critic_main_1 = DistCritic(self.quantile_num, self.noise_dim, self.obs_space, self.act_space)
+        self.critic_main_2 = DistCritic(self.quantile_num, self.noise_dim, self.obs_space, self.act_space)
+        self.critic_target_1 = DistCritic(self.quantile_num, self.noise_dim, self.obs_space, self.act_space)
+        self.critic_target_2 = DistCritic(self.quantile_num, self.noise_dim, self.obs_space, self.act_space)
+
         self.critic_target_1.set_weights(self.critic_main_1.get_weights())
         self.critic_target_2.set_weights(self.critic_main_2.get_weights())
         self.critic_opt_main_1 = Adam(self.critic_lr_main)
@@ -310,6 +317,7 @@ class Agent:
         self.critic_main_1.compile(optimizer=self.critic_opt_main_1)
         self.critic_main_2.compile(optimizer=self.critic_opt_main_2)
 
+        self.huber_loss = Huber(reduction = tf.keras.losses.Reduction.NONE)
         # extension config
         self.extension_config = self.agent_config['extension']
 
@@ -336,24 +344,31 @@ class Agent:
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
-        # print(f'in action, obs: {obs.shape}')
+        print(f'in action, obs: {obs.shape}')
         raw_action = self.actor_main.sample(obs)
-        # print(f'in action, raw_action: {raw_action.shape}')
+        print(f'in action, raw_action: {raw_action.shape}')
         action = np.clip(raw_action.numpy(), -1, 1)
-        # print(f'in action, clipped action: {action}')
+        print(f'in action, clipped action: {action}')
 
         return action
 
     def sample_tau(self):
         tau_raw = tf.random.uniform(shape=(self.batch_size, self.quantile_num), dtype=tf.float32) + 0.1
+        print(f'tau_raw: {tau_raw.shape}')
         tau_raw = tf.divide(tau_raw ,tf.reduce_sum(tau_raw, axis=1, keepdims=True))
+        print(f'tau_raw: {tau_raw.shape}')
 
         tau_hat_raw = tf.cumsum(tau_raw, axis=1).numpy()
+        print(f'tau_hat_raw: {tau_hat_raw.shape}')
         tau_hat_raw_left  = tf.concat([tf.zeros(shape=(self.batch_size, 1)), tau_hat_raw], axis=1)
+        print(f'tau_hat_raw_left: {tau_hat_raw_left.shape}')
         tau_hat_raw_right = tf.concat([tau_hat_raw, tf.zeros(shape=(self.batch_size, 1))], axis=1)
+        print(f'tau_hat_raw_right: {tau_hat_raw_right.shape}')
 
         tau_hat = tf.nest.map_structure(lambda x, y: (x + y) / 2, tau_hat_raw_left, tau_hat_raw_right)
+        print(f'tau_hat: {tau_hat.shape}')
         tau_hat = tf.slice(tau_hat, [0,0], [self.batch_size, self.quantile_num])
+        print(f'tau_hat: {tau_hat.shape}')
 
         return tau_hat
 
@@ -380,7 +395,7 @@ class Agent:
         inv_tau = tf.subtract(tf.ones_like(tau, dtype=tf.float32), tau)
         print(f'inv_tau: {inv_tau.shape}')
 
-        huber_loss = Huber(target, current, reduction=Reduction.None)
+        huber_loss = self.huber_loss(target, current)
         print(f'huber_loss: {huber_loss.shape}')
 
         sign = tf.sign(current - target) / 2 + 0.5
@@ -437,12 +452,12 @@ class Agent:
             actions = tf.convert_to_tensor(actions, dtype = tf.float32)
             dones = tf.convert_to_tensor(dones, dtype = tf.bool)
             is_weight = tf.convert_to_tensor(is_weight, dtype=tf.float32)
-            # print('states : {}'.format(states.numpy().shape), states)
-            # print('next_states : {}'.format(next_states.numpy().shape), next_states)
-            # print('rewards : {}'.format(rewards.numpy().shape), rewards)
-            # print('actions : {}'.format(actions.numpy().shape), actions)
-            # print('dones : {}'.format(dones.numpy().shape), dones)
-            # print('is_weight : {}'.format(is_weight.numpy().shape), is_weight)
+            print(f'states : {states.shape}')
+            print(f'next_states : {next_states.shape}')
+            print(f'rewards : {rewards.shape}')
+            print(f'actions : {actions.shape}')
+            print(f'dones : {dones.shape}')
+            print(f'is_weight : {is_weight.shape}')
 
         else:
             states, next_states, rewards, actions, dones = self.replay_buffer.sample(self.batch_size)
@@ -456,13 +471,21 @@ class Agent:
             rewards = tf.convert_to_tensor(rewards, dtype = tf.float32)
             actions = tf.convert_to_tensor(actions, dtype = tf.float32)
             dones = tf.convert_to_tensor(dones, dtype = tf.bool)
-
+            print(f'states : {states.shape}')
+            print(f'next_states : {next_states.shape}')
+            print(f'rewards : {rewards.shape}')
+            print(f'actions : {actions.shape}')
+            print(f'dones : {dones.shape}')
+            
         if self.extension_config['use_automatic_entropy_tuning']:
             alpha_variable = self.log_alpha
             with tf.GradientTape() as tape_alpha:
-                target_actions, taget_log_p = self.actor_target(next_states)
                 tape_alpha.watch(alpha_variable)
+                target_actions, taget_log_p = self.actor_target(next_states)
+                print(f'target_actions : {target_actions.shape}')
+                print(f'taget_log_p : {taget_log_p.shape}')
                 alpha_loss = -tf.reduce_mean((tf.exp(self.log_alpha) * (taget_log_p + self.target_entropy)))
+                print(f'alpha_loss : {alpha_loss.shape}')
 
             grads_alpha, _ = tf.clip_by_global_norm(tape_alpha.gradient(alpha_loss, alpha_variable), 0.5)
             self.alpha_optimizer.apply_gradients(zip(grads_alpha, alpha_variable))
@@ -555,7 +578,7 @@ class Agent:
         actor_loss_val = actor_loss.numpy()
         
         self.update_target()
-
+        raise RuntimeError('debug')
         td_error_numpy = np.abs(tf.add(td_error_1, td_error_2)/2).numpy()
         if self.agent_config['use_PER']:
             for i in range(self.batch_size):

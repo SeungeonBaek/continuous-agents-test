@@ -56,6 +56,9 @@ class RLLoader():
             else:
                 from agents.SAC import Agent
 
+        elif self.agent_config['agent_name'] == 'IDAC':
+            from agents.IDAC import Agent
+
         else:
             raise ValueError('Please try to set the correct Agent')
 

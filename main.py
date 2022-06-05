@@ -118,8 +118,9 @@ if __name__ == '__main__':
     4: TD3,  5: TD3_TQC,  6: TD3_gSDE
     7: PPO,  8: MEPPO,    9: PPO_gSDE
     10: SAC, 11: SAC_TQC, 12: SAC_gSDE
-    13: IDAC_Gaussian_No_Alpha, 14: IDAC_Gaussian_Alpha,
-    15: IDAC_Implicit_No_Alpha, 16: IDAC_Implicit_Alpha
+    13: IDAC_Gaussian_No_Alpha_No_Reparam, 14: IDAC_Gaussian_No_Alpha_Reparam,
+    15: IDAC_Gaussian_Alpha_No_Reparam, 16: IDAC_Gaussian_Alpha_Reparam
+    17: IDAC_Implicit_No_Alpha, 18: IDAC_Implicit_Alpha
     """
     
     env_switch = 1
@@ -132,8 +133,8 @@ if __name__ == '__main__':
     parent_path = str(os.path.abspath(''))
     time_string = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
-    result_path = parent_path + '/results/{env}/{agent}_result/'.format(env=env_config['env_name'], agent=agent_config['agent_name']) + time_string
-    data_save_path = parent_path + '\\results\\{env}\\{agent}_result\\'.format(env=env_config['env_name'], agent=agent_config['agent_name']) + time_string + '\\'
+    result_path = parent_path + '/results/{env}/{agent}/{extension}_result/'.format(env=env_config['env_name'], agent=agent_config['agent_name'], extension=agent_config['extension']['name']) + time_string
+    data_save_path = parent_path + '\\results\\{env}\\{agent}\\{extension}_result\\'.format(env=env_config['env_name'], agent=agent_config['agent_name'], extension=agent_config['extension']['name']) + time_string + '\\'
 
     summary_writer = SummaryWriter(result_path+'/tensorboard/')
     wandb_session = wandb.init(project="RL-test-2", job_type="train", name=time_string)
