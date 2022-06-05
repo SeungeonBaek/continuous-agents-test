@@ -55,5 +55,22 @@ def env_agent_config(env_switch, agent_switch):
 
     else:
         raise ValueError('Please try to correct agent_switch')
-    
+
+    # IDAC
+    elif agent_switch == 13:
+        from agent_config import IDAC_Gaussian_No_Alpha_agent_config
+        agent_config = IDAC_Gaussian_No_Alpha_agent_config
+    elif agent_switch == 14:
+        from agent_config import IDAC_Gaussian_Alpha_agent_config
+        agent_config = IDAC_Gaussian_Alpha_agent_config
+    elif agent_switch == 15:
+        from agent_config import IDAC_Implicit_No_Alpha_agent_config
+        agent_config = IDAC_Implicit_No_Alpha_agent_config
+    elif agent_switch == 16:
+        from agent_config import IDAC_Implicit_Alpha_agent_config
+        agent_config = IDAC_Implicit_Alpha_agent_config
+
+    else:
+        raise ValueError('Please try to correct agent_switch')
+
     return env_config, agent_config

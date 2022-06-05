@@ -7,6 +7,8 @@ from tensorflow.keras import Model
 from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense
+from tensorflow.keras.losses import Huber
+from tensorflow.keras.losses import Reduction
 
 from utils.replay_buffer import ExperienceMemory
 from utils.prioritized_memory_numpy import PrioritizedMemory
@@ -365,9 +367,30 @@ class Agent:
     def quantile_regression_loss(self, current, target, tau, weight=1.0):
         """
         """
-        current = tf.expand_dims(current)
-        target = tf.expand_dims(target)
-        
+        print(f'current: {current.shape}')
+        print(f'target: {target.shape}')
+        print(f'tau: {tau.shape}')
+
+        current = tf.tile(tf.expand_dims(current, axis=2), [1, 1, self.quantile_num])
+        print(f'current: {current.shape}')
+        target = tf.tile(tf.expand_dims(target, axis=1), [1, self.quantile_num, 1])
+        print(f'target: {target.shape}')
+        tau = tf.expand_dims(tau, axis=2)
+        print(f'tau: {tau.shape}')
+        inv_tau = tf.subtract(tf.ones_like(tau, dtype=tf.float32), tau)
+        print(f'inv_tau: {inv_tau.shape}')
+
+        huber_loss = Huber(target, current, reduction=Reduction.None)
+        print(f'huber_loss: {huber_loss.shape}')
+
+        sign = tf.sign(current - target) / 2 + 0.5
+        print(f'sign: {sign.shape}')
+        rho = tf.cond(tf.less(sign, 0.0), \
+                lambda: tf.multiply(tau , huber_loss),\
+                lambda: tf.multiply(inv_tau , huber_loss))
+        print(f'rho: {rho.shape}')
+
+        return tf.reduce_mean(tf.reduce_sum(rho, axis = 2), axis=1)
 
     def update_target(self):
         actor_weithgs = []
@@ -393,10 +416,10 @@ class Agent:
 
     def update(self):
         if self.replay_buffer._len() < self.batch_size:
-            return False, 0.0, 0.0, 0.0, 0.0
+            return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         if not self.update_step % self.update_freq == 0:  # only update every update_freq
             self.update_step += 1
-            return False, 0.0, 0.0, 0.0, 0.0
+            return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
         updated = True
         self.update_step += 1
@@ -433,7 +456,21 @@ class Agent:
             rewards = tf.convert_to_tensor(rewards, dtype = tf.float32)
             actions = tf.convert_to_tensor(actions, dtype = tf.float32)
             dones = tf.convert_to_tensor(dones, dtype = tf.bool)
-        
+
+        if self.extension_config['use_automatic_entropy_tuning']:
+            alpha_variable = self.log_alpha
+            with tf.GradientTape() as tape_alpha:
+                target_actions, taget_log_p = self.actor_target(next_states)
+                tape_alpha.watch(alpha_variable)
+                alpha_loss = -tf.reduce_mean((tf.exp(self.log_alpha) * (taget_log_p + self.target_entropy)))
+
+            grads_alpha, _ = tf.clip_by_global_norm(tape_alpha.gradient(alpha_loss, alpha_variable), 0.5)
+            self.alpha_optimizer.apply_gradients(zip(grads_alpha, alpha_variable))
+   
+        else:
+            alpha_loss = 0
+            alpha = self.alpha 
+
         critic_variable_1 = self.critic_main_1.trainable_variables
         critic_variable_2 = self.critic_main_2.trainable_variables
         with tf.GradientTape() as tape_critic_1, tf.GradientTape() as tape_critic_2:
@@ -441,31 +478,33 @@ class Agent:
             tape_critic_2.watch(critic_variable_2)
 
             target_actions, target_log_p = self.actor_target(next_states)
-            # print(f'target_action : {target_action.shape}')
-            # print(f'target_log_p : {target_log_p.shape}')
+            print(f'target_actions : {target_actions.shape}')
+            print(f'target_log_p : {target_log_p.shape}')
 
             target_q_1_values = self.critic_target_1.sample(next_states, target_actions, self.quantile_num)
             target_q_2_values = self.critic_target_2.sample(next_states, target_actions, self.quantile_num)
             target_q_next = tf.minimum(target_q_1_values, target_q_2_values, axis=1) - tf.multiply(alpha, target_log_p)
-            # print(f'target_q_1_values : {target_q_1_values.shape}')
-            # print(f'target_q_2_values : {target_q_2_values.shape}')
-            # print(f'target_q_next : {target_q_next.shape}')
+            print(f'target_q_1_values : {target_q_1_values.shape}')
+            print(f'target_q_2_values : {target_q_2_values.shape}')
+            print(f'target_q_next : {target_q_next.shape}')
 
             target_q = rewards + self.gamma * target_q_next * (1.0 - tf.cast(dones, dtype=tf.float32))
-            # print(f'target_q : {target_q.shape}')
+            print(f'target_q : {target_q.shape}')
 
             tau_hat_1 = self.sample_tau()
             tau_hat_2 = self.sample_tau()
+            print(f'tau_hat_1 : {tau_hat_1.shape}')
+            print(f'tau_hat_2 : {tau_hat_2.shape}')
 
             current_q_1_values = self.critic_main_1.sample(states, actions, self.quantile_num)
             current_q_2_values = self.critic_main_2.sample(states, actions, self.quantile_num)
-            # print(f'current_q_1_values : {current_q_1_values.shape}')
-            # print(f'current_q_2_values : {current_q_2_values.shape}')
+            print(f'current_q_1_values : {current_q_1_values.shape}')
+            print(f'current_q_2_values : {current_q_2_values.shape}')
         
-            td_error_1 = None
-            td_error_2 = None
-            # print(f'td_error_1 : {td_error_1.shape}')
-            # print(f'td_error_2 : {td_error_2.shape}')
+            td_error_1 = self.quantile_regression_loss(current_q_1_values, target_q, tau_hat_1)
+            td_error_2 = self.quantile_regression_loss(current_q_2_values, target_q, tau_hat_2)
+            print(f'td_error_1 : {td_error_1.shape}')
+            print(f'td_error_2 : {td_error_2.shape}')
 
             critic_losses_1 = tf.cond(tf.convert_to_tensor(self.agent_config['use_PER'], dtype=tf.bool), \
                     lambda: tf.multiply(is_weight, tf.math.square(td_error_1)), \
@@ -473,13 +512,13 @@ class Agent:
             critic_losses_2 = tf.cond(tf.convert_to_tensor(self.agent_config['use_PER'], dtype=tf.bool), \
                     lambda: tf.multiply(is_weight, tf.math.square(td_error_1)), \
                     lambda: tf.math.square(td_error_1))
-            # print(f'critic_losses_1 : {critic_losses_1.shape}')
-            # print(f'critic_losses_2 : {critic_losses_2.shape}')
+            print(f'critic_losses_1 : {critic_losses_1.shape}')
+            print(f'critic_losses_2 : {critic_losses_2.shape}')
 
             critic_loss_1 = tf.math.reduce_mean(critic_losses_1)
             critic_loss_2 = tf.math.reduce_mean(critic_losses_2)
-            # print(f'critic_loss_1 : {critic_loss_1.shape}')
-            # print(f'critic_loss_2 : {critic_loss_2.shape}')
+            print(f'critic_loss_1 : {critic_loss_1.shape}')
+            print(f'critic_loss_2 : {critic_loss_2.shape}')
 
         grads_critic_1, _ = tf.clip_by_global_norm(tape_critic_1.gradient(critic_loss_1, critic_variable_1), 0.5)
         grads_critic_2, _ = tf.clip_by_global_norm(tape_critic_2.gradient(critic_loss_2, critic_variable_2), 0.5)
@@ -492,20 +531,27 @@ class Agent:
             tape_actor.watch(actor_variable)
 
             new_policy_actions, new_log_p = self.actor_main(states)
+            print(f'new_policy_actions : {new_policy_actions.shape}')
+            print(f'new_log_p : {new_log_p.shape}')
             new_current_q_1 = tf.reduce_mean(self.critic_main_1(tf.concat([states, new_policy_actions],1)), axis=1, keepdims=True)
             new_current_q_2 = tf.reduce_mean(self.critic_main_2(tf.concat([states, new_policy_actions],1)), axis=1, keepdims=True)
+            print(f'new_current_q_1 : {new_current_q_1.shape}')
+            print(f'new_current_q_2 : {new_current_q_2.shape}')
 
             actor_loss = tf.multiply(alpha, new_log_p) - tf.minimum(new_current_q_1, new_current_q_2, axis=1)
+            print(f'actor_loss : {actor_loss.shape}')
             actor_loss = tf.math.reduce_mean(actor_loss)
+            print(f'actor_loss : {actor_loss.shape}')
             
         grads_actor, _ = tf.clip_by_global_norm(tape_actor.gradient(actor_loss, actor_variable), 0.5)
         self.actor_opt_main.apply_gradients(zip(grads_actor, actor_variable))
 
-        target_q_val = tf.math.reduce_mean(target_q).numpy()
-        current_q_1_val = tf.math.reduce_mean(current_q_1_values).numpy()
-        current_q_2_val = tf.math.reduce_mean(current_q_2_values).numpy()
+        target_q_val = tf.reduce_mean(target_q).numpy()
+        current_q_1_val = tf.reduce_mean(current_q_1_values).numpy()
+        current_q_2_val = tf.reduce_mean(current_q_2_values).numpy()
         criitic_loss_1_val = critic_loss_1.numpy()
         criitic_loss_2_val = critic_loss_2.numpy()
+        alpha_loss_val = alpha_loss.numpy()
         actor_loss_val = actor_loss.numpy()
         
         self.update_target()
@@ -515,7 +561,7 @@ class Agent:
             for i in range(self.batch_size):
                 self.replay_buffer.update(idxs[i], td_error_numpy[i])
 
-        return updated, actor_loss_val, criitic_loss_1_val, criitic_loss_2_val, target_q_val, current_q_1_val, current_q_2_val
+        return updated, alpha_loss_val, actor_loss_val, criitic_loss_1_val, criitic_loss_2_val, target_q_val, current_q_1_val, current_q_2_val
 
     def save_xp(self, state, next_state, reward, action, done):
         # Store transition in the replay buffer.
