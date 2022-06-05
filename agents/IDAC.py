@@ -1,4 +1,3 @@
-from cProfile import label
 import tensorflow as tf
 import numpy as np
 import tensorflow_probability as tfp
@@ -8,7 +7,7 @@ from tensorflow.keras import Model
 from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense
-from tensorflow.keras.losses import huber
+from tensorflow.keras.layers import LayerNormalization
 
 from utils.replay_buffer import ExperienceMemory
 from utils.prioritized_memory_numpy import PrioritizedMemory
@@ -27,10 +26,12 @@ class GaussianActor(Model):
         self.action_space = action_space
 
         self.initializer = initializers.he_normal()
-        self.regularizer = regularizers.l2(l=0.005)
+        self.regularizer = regularizers.l2(l=0.001)
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1_ln = LayerNormalization(axis=-1)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2_ln = LayerNormalization(axis=-1)
 
         if self.gaussian_actor_config['use_reparam_trick']:
             self.noise_dim  = self.gaussian_actor_config['noise_dim']
@@ -53,8 +54,10 @@ class GaussianActor(Model):
             print(f'in gaussian actor, in call, noise: {noise.shape}')
 
             l1 = self.l1(tf.concat([state, noise], axis=1))
+            l1 = self.l1_ln(l1)
             print(f'in gaussian actor, in call, l1: {l1.shape}')
             l2 = self.l2(l1)
+            l2 = self.l2_ln(l2)
             print(f'in gaussian actor, in call, l2: {l2.shape}')
             mu = self.mu(l2)
             print(f'in gaussian actor, in call, mu: {mu.shape}')
@@ -78,8 +81,10 @@ class GaussianActor(Model):
             # print(f'in gaussian actor, in call, state: {state.shape}')
 
             l1 = self.l1(state)
+            l1 = self.l1_ln(l1)
             # print(f'in gaussian actor, in call, l1: {l1.shape}')
             l2 = self.l2(l1)
+            l2 = self.l2_ln(l2)
             # print(f'in gaussian actor, in call, l2: {l2.shape}')
             mu = self.mu(l2)
             # print(f'in gaussian actor, in call, mu: {mu.shape}')
@@ -110,8 +115,10 @@ class GaussianActor(Model):
             print(f'in gaussian actor, in sample, in sample, noise: {noise.shape}')
 
             l1 = self.l1(tf.concat([state, noise], axis=1))
+            l1 = self.l1_ln(l1)
             print(f'in gaussian actor, in sample, l1: {l1.shape}')
             l2 = self.l2(l1)
+            l2 = self.l2_ln(l2)
             print(f'in gaussian actor, in sample, l2: {l2.shape}')
             mu = self.mu(l2)
             print(f'in gaussian actor, in sample, mu: {mu.shape}')
@@ -129,8 +136,10 @@ class GaussianActor(Model):
 
         else:
             l1 = self.l1(state)
+            l1 = self.l1_ln(l1)
             # print(f'in gaussian actor, in sample, l1: {l1.shape}')
             l2 = self.l2(l1)
+            l2 = self.l2_ln(l2)
             # print(f'in gaussian actor, in sample, l2: {l2.shape}')
             mu = self.mu(l2)
             # print(f'in gaussian actor, in sample, mu: {mu.shape}')
@@ -175,10 +184,12 @@ class ImplicitActor(Model):
         self.action_space = action_space
 
         self.initializer = initializers.he_normal()
-        self.regularizer = regularizers.l2(l=0.005)
+        self.regularizer = regularizers.l2(l=0.001)
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1_ln = LayerNormalization(axis=-1)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2_ln = LayerNormalization(axis=-1)
 
         self.mu = Dense(action_space, activation=None)
         self.std = Dense(action_space, activation=None)
@@ -191,8 +202,10 @@ class ImplicitActor(Model):
         # print(f'in implicit actor, in call, noise: {noise.shape}')
 
         l1 = self.l1(tf.concat([state, noise], axis=1))
+        l1 = self.l1_ln(l1)
         # print(f'in implicit actor, in call, l1: {l1.shape}')
         l2 = self.l2(l1)
+        l2 = self.l2_ln(l2)
         # print(f'in implicit actor, in call, l2: {l2.shape}')
         mu = self.mu(l2)
         # print(f'in implicit actor, in call, mu: {mu.shape}')
@@ -225,8 +238,10 @@ class ImplicitActor(Model):
         # print(f'in implicit actor, in call, noise_actions: {noise_actions.shape}')
 
         l1_actions = self.l1(tf.concat([state_repeat, noise_actions], axis=1))
+        l1_actions = self.l1_ln(l1_actions)
         # print(f'in implicit actor, in call, l1_actions: {l1_actions.shape}')
         l2_actions = self.l2(l1_actions)
+        l2_actions = self.l2_ln(l2_actions)
         # print(f'in implicit actor, in call, l2_actions: {l2_actions.shape}')
         mu_actions = self.mu(l2_actions)
         # print(f'in implicit actor, in call, mu_actions: {mu_actions.shape}')
@@ -264,8 +279,10 @@ class ImplicitActor(Model):
         # print(f'in implicit actor, in sample, noise: {noise.shape}')
 
         l1 = self.l1(tf.concat([state, noise], axis=1))
+        l1 = self.l1_ln(l1)
         # print(f'in implicit actor, in sample, l1: {l1.shape}')
         l2 = self.l2(l1)
+        l2 = self.l2_ln(l2)
         # print(f'in implicit actor, in sample, l2: {l2.shape}')
         mu = self.mu(l2)
         # print(f'in implicit actor, in sample, mu: {mu.shape}')
@@ -301,10 +318,12 @@ class DistCritic(Model):
         self.action_space = action_space
 
         self.initializer = initializers.he_normal()
-        self.regularizer = regularizers.l2(l=0.005)
+        self.regularizer = regularizers.l2(l=0.001)
 
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1_ln = LayerNormalization(axis=-1)
         self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2_ln = LayerNormalization(axis=-1)
         self.value = Dense(1, activation=None)
 
     def call(self, state, action):
@@ -318,8 +337,10 @@ class DistCritic(Model):
         # print(f'in Dist Critic, noise_repeat: {noise_repeat.shape}')
 
         l1 = self.l1(tf.concat([state_repeat, action_repeat, noise_repeat], axis=1))
+        l1 = self.l1_ln(l1)
         # print(f'in Dist Critic, l1: {l1.shape}')
         l2 = self.l2(l1)
+        l2 = self.l2_ln(l2)
         # print(f'in Dist Critic, l2: {l2.shape}')
         value = self.value(l2)
         # print(f'in Dist Critic, value: {value.shape}')
@@ -603,8 +624,10 @@ class Agent:
 
             tau_1_hat_expand = tf.expand_dims(tau_1_hat, axis=2)
             tau_2_hat_expand = tf.expand_dims(tau_2_hat, axis=2)
-            inv_tau_1 = tf.subtract(tf.ones_like(tau_1_hat_expand, dtype=tf.float32), tau_1_hat_expand)
-            inv_tau_2 = tf.subtract(tf.ones_like(tau_2_hat_expand, dtype=tf.float32), tau_2_hat_expand)
+            # inv_tau_1 = tf.subtract(tf.ones_like(tau_1_hat_expand, dtype=tf.float32), tau_1_hat_expand)
+            # inv_tau_2 = tf.subtract(tf.ones_like(tau_2_hat_expand, dtype=tf.float32), tau_2_hat_expand)
+            inv_tau_1 = 1 - tau_1_hat_expand
+            inv_tau_2 = 1 - tau_2_hat_expand
             # print(f'in QR Loss, tau_hat_expand: {tau_1_hat_expand.shape}, {tau_2_hat_expand.shape}')
             # print(f'in QR Loss, inv_tau: {inv_tau_1.shape}, {inv_tau_2.shape}')
 
@@ -632,8 +655,8 @@ class Agent:
             # tf.debugging.check_numerics(rho_1, message='rho_1 is not numeric')
             # tf.debugging.check_numerics(rho_2, message='rho_2 is not numeric')
 
-            td_error_1 = tf.reduce_mean(tf.reduce_sum(rho_1, axis = 2), axis=1)
-            td_error_2 = tf.reduce_mean(tf.reduce_sum(rho_2, axis = 2), axis=1)
+            td_error_1 = tf.reduce_sum(tf.reduce_mean(rho_1, axis = 2), axis=1)
+            td_error_2 = tf.reduce_sum(tf.reduce_mean(rho_2, axis = 2), axis=1)
             # print(f'td_error : {td_error_1.shape}, {td_error_2.shape}')
             # tf.debugging.check_numerics(td_error_1, message='td_error_1 is not numeric')
             # tf.debugging.check_numerics(td_error_2, message='td_error_2 is not numeric')
@@ -654,8 +677,8 @@ class Agent:
             # tf.debugging.check_numerics(critic_loss_1, message='critic_loss_1 is not numeric')
             # tf.debugging.check_numerics(critic_loss_2, message='critic_loss_2 is not numeric')
 
-        grads_critic_1, _ = tf.clip_by_global_norm(tape_critic_1.gradient(critic_loss_1, critic_variable_1), 0.5)
-        grads_critic_2, _ = tf.clip_by_global_norm(tape_critic_2.gradient(critic_loss_2, critic_variable_2), 0.5)
+        grads_critic_1, _ = tf.clip_by_global_norm(tape_critic_1.gradient(critic_loss_1, critic_variable_1), 1)
+        grads_critic_2, _ = tf.clip_by_global_norm(tape_critic_2.gradient(critic_loss_2, critic_variable_2), 1)
 
         self.critic_opt_main_1.apply_gradients(zip(grads_critic_1, critic_variable_1))
         self.critic_opt_main_2.apply_gradients(zip(grads_critic_2, critic_variable_2))
@@ -688,7 +711,7 @@ class Agent:
             # print(f'actor_loss : {actor_loss.shape}')
             # tf.debugging.check_numerics(actor_loss, message='actor_loss is not numeric')
             
-        grads_actor, _ = tf.clip_by_global_norm(tape_actor.gradient(actor_loss, actor_variable), 0.5)
+        grads_actor, _ = tf.clip_by_global_norm(tape_actor.gradient(actor_loss, actor_variable), 1)
         self.actor_opt_main.apply_gradients(zip(grads_actor, actor_variable))
 
         target_q_val = tf.reduce_mean(target_q).numpy()
