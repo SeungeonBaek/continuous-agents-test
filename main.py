@@ -124,11 +124,11 @@ if __name__ == '__main__':
     """
     
     env_switch = 1
-    agent_switch = 13 # 13 => 14 => 17 => 15 => 16 => 18 순으로 테스트
+    agent_switch = 17 # 13 => 14 => 17 => 15 => 16 => 18 순으로 테스트
 
     env_config, agent_config = env_agent_config(env_switch, agent_switch)
     
-    rl_config = {'csv_logging': False, 'wandb': False, 'tensorboard': True}
+    rl_config = {'csv_logging': True, 'wandb': False, 'tensorboard': True}
 
     parent_path = str(os.path.abspath(''))
     time_string = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')

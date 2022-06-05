@@ -600,10 +600,6 @@ class Agent:
             inv_tau_2 = tf.subtract(tf.ones_like(tau_2_hat_expand, dtype=tf.float32), tau_2_hat_expand)
             # print(f'in QR Loss, tau_hat_expand: {tau_1_hat_expand.shape}, {tau_2_hat_expand.shape}')
             # print(f'in QR Loss, inv_tau: {inv_tau_1.shape}, {inv_tau_2.shape}')
-            tf.debugging.check_numerics(tau_1_hat_expand, message='tau_1_hat_expand is not numeric')
-            tf.debugging.check_numerics(tau_2_hat_expand, message='tau_2_hat_expand is not numeric')
-            tf.debugging.check_numerics(inv_tau_1, message='inv_tau_1 is not numeric')
-            tf.debugging.check_numerics(inv_tau_2, message='inv_tau_2 is not numeric')
 
             td_loss_1 = tf.subtract(target_tile, current_1_tile)
             td_loss_2 = tf.subtract(target_tile, current_2_tile)
@@ -611,20 +607,20 @@ class Agent:
             tf.debugging.check_numerics(td_loss_1, message='td_loss_1 is not numeric')
             tf.debugging.check_numerics(td_loss_2, message='td_loss_2 is not numeric')
 
-            huber_loss_1 = tf.where(tf.less(td_loss_1, 1.0), tf.math.square(td_loss_1), td_loss_1)
-            huber_loss_2 = tf.where(tf.less(td_loss_2, 1.0), tf.math.square(td_loss_2), td_loss_2)
+            huber_loss_1 = tf.where(tf.less(td_loss_1, 1.0), 1/2 * tf.math.square(td_loss_1), 1.0 * tf.abs(td_loss_1 - 1.0 * 1/2))
+            huber_loss_2 = tf.where(tf.less(td_loss_2, 1.0), 1/2 * tf.math.square(td_loss_2), 1.0 * tf.abs(td_loss_2 - 1.0 * 1/2))
             # print(f'in QR Loss, huber_loss: {huber_loss_1.shape}, {huber_loss_2.shape}')
             tf.debugging.check_numerics(huber_loss_1, message='huber_loss_1 is not numeric')
             tf.debugging.check_numerics(huber_loss_2, message='huber_loss_2 is not numeric')
 
-            sign_1 = tf.sign(current_1_tile - target_tile) / 2 + 0.5
-            sign_2 = tf.sign(current_2_tile - target_tile) / 2 + 0.5
+            sign_1 = tf.sign(target_tile - current_1_tile)
+            sign_2 = tf.sign(target_tile - current_2_tile)
             # print(f'in QR Loss, sign: {sign_1.shape}, {sign_2.shape}')
             tf.debugging.check_numerics(sign_1, message='sign_1 is not numeric')
             tf.debugging.check_numerics(sign_2, message='sign_2 is not numeric')
 
-            rho_1 = tf.where(tf.less(sign_1, 0.0), tf.multiply(tau_1_hat_expand , huber_loss_1), tf.multiply(inv_tau_1 , huber_loss_1))
-            rho_2 = tf.where(tf.less(sign_2, 0.0), tf.multiply(tau_2_hat_expand , huber_loss_2), tf.multiply(inv_tau_2 , huber_loss_2))
+            rho_1 = tf.where(tf.less(sign_1, 0.0), tf.multiply(inv_tau_1 , huber_loss_1), tf.multiply(tau_1_hat_expand , huber_loss_1))
+            rho_2 = tf.where(tf.less(sign_2, 0.0), tf.multiply(inv_tau_2 , huber_loss_2), tf.multiply(tau_2_hat_expand , huber_loss_2))
             # print(f'rho : {rho_1.shape}, {rho_2.shape}')
             tf.debugging.check_numerics(rho_1, message='rho_1 is not numeric')
             tf.debugging.check_numerics(rho_2, message='rho_2 is not numeric')
