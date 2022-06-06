@@ -124,7 +124,7 @@ if __name__ == '__main__':
     """
     
     env_switch = 1
-    agent_switch = 17 # 13 => 14 => 17 => 15 => 16 => 18 순으로 테스트
+    agent_switch = 18 # 13 => 14 => 17 => 15 => 16 => 18 순으로 테스트
 
     env_config, agent_config = env_agent_config(env_switch, agent_switch)
     

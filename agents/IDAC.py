@@ -443,8 +443,8 @@ class Agent:
             self.actor_main.compile(optimizer=self.actor_opt_main)
 
         if self.extension_config['use_automatic_entropy_tuning']:
-            if self.extension_config['use_automatic_entropy_tuning']['use_target_entropy']:
-                self.target_entropy = self.extension_config['use_automatic_entropy_tuning']['target_entropy']
+            if self.extension_config['automatic_alpha_config']['use_target_entropy']:
+                self.target_entropy = self.extension_config['automatic_alpha_config']['target_entropy']
             else:
                 self.target_entropy = -np.prod(self.act_space).item()
             self.log_alpha = tf.Variable(0, trainable=True, dtype=tf.float32)
@@ -533,12 +533,12 @@ class Agent:
             actions = tf.convert_to_tensor(actions, dtype = tf.float32)
             dones = tf.convert_to_tensor(dones, dtype = tf.bool)
             is_weight = tf.convert_to_tensor(is_weight, dtype=tf.float32)
-            print(f'states : {states.shape}')
-            print(f'next_states : {next_states.shape}')
-            print(f'rewards : {rewards.shape}')
-            print(f'actions : {actions.shape}')
-            print(f'dones : {dones.shape}')
-            print(f'is_weight : {is_weight.shape}')
+            # print(f'states : {states.shape}')
+            # print(f'next_states : {next_states.shape}')
+            # print(f'rewards : {rewards.shape}')
+            # print(f'actions : {actions.shape}')
+            # print(f'dones : {dones.shape}')
+            # print(f'is_weight : {is_weight.shape}')
 
         else:
             states, next_states, rewards, actions, dones = self.replay_buffer.sample(self.batch_size)
@@ -563,14 +563,15 @@ class Agent:
             with tf.GradientTape() as tape_alpha:
                 tape_alpha.watch(alpha_variable)
                 target_actions, taget_log_p = self.actor_target(next_states)
-                print(f'target_actions : {target_actions.shape}')
-                print(f'taget_log_p : {taget_log_p.shape}')
+                # print(f'target_actions : {target_actions.shape}')
+                # print(f'taget_log_p : {taget_log_p.shape}')
                 alpha_loss = -tf.reduce_mean((tf.exp(self.log_alpha) * (taget_log_p + self.target_entropy)))
-                print(f'alpha_loss : {alpha_loss.shape}')
+                # print(f'alpha_loss : {alpha_loss.shape}')
 
-            grads_alpha, _ = tf.clip_by_global_norm(tape_alpha.gradient(alpha_loss, alpha_variable), 0.5)
-            self.alpha_optimizer.apply_gradients(zip(grads_alpha, alpha_variable))
-   
+            grads_alpha, _ = tf.clip_by_global_norm(tape_alpha.gradient(alpha_loss, [alpha_variable]), 1)
+            self.alpha_optimizer.apply_gradients(zip(grads_alpha, [alpha_variable]))
+
+            alpha = tf.exp(self.log_alpha)
         else:
             alpha_loss = 0
             alpha = self.alpha 
@@ -700,7 +701,7 @@ class Agent:
             # tf.debugging.check_numerics(new_current_q_1, message='new_current_q_1 is not numeric')
             # tf.debugging.check_numerics(new_current_q_2, message='new_current_q_2 is not numeric')
 
-            new_current_q = tf.multiply(alpha, new_log_p) - tf.minimum(new_current_q_1, new_current_q_2)
+            new_current_q = tf.multiply(tf.stop_gradient(alpha), new_log_p) - tf.minimum(new_current_q_1, new_current_q_2)
             # print(f'new_current_q : {new_current_q.shape}')
             # tf.debugging.check_numerics(new_current_q_2, message='new_current_q_2 is not numeric')
 
@@ -727,7 +728,7 @@ class Agent:
         
         self.update_target()
 
-        td_error_numpy = np.abs((tf.add(td_error_1, td_error_2)/2).numpy())
+        td_error_numpy = np.abs((tf.add(tf.abs(td_error_1), tf.abs(td_error_2))/2).numpy())
         if self.agent_config['use_PER']:
             for i in range(self.batch_size):
                 self.replay_buffer.update(idxs[i], td_error_numpy[i])

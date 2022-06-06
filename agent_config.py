@@ -74,7 +74,7 @@ IDAC_Gaussian_Alpha_No_Reparam_agent_config = {'agent_name': 'IDAC', 'gamma' : 0
 IDAC_Gaussian_Alpha_No_Reparam_agent_config['extension'] = {'name': 'Gaussian_Alpha_No_Reparam', 'use_implicit_actor': False, 'use_automatic_entropy_tuning': True}
 IDAC_Gaussian_Alpha_No_Reparam_agent_config['extension']['gaussian_actor_config'] = {'noise_dim': 5, 'log_sig_min': -20, 'log_sig_max': 2, \
                                                                             'log_prob_min': -5, 'log_prob_max': 5, 'use_reparam_trick': False}
-IDAC_Gaussian_Alpha_No_Reparam_agent_config['extension']['automatic_alpha_config'] = {'use_target_entropy' : True, 'target_entropy': 0.1}
+IDAC_Gaussian_Alpha_No_Reparam_agent_config['extension']['automatic_alpha_config'] = {'use_target_entropy' : False}
 
 
 IDAC_Gaussian_Alpha_Reparam_agent_config = {'agent_name': 'IDAC', 'gamma' : 0.99, 'tau': 0.005, 'update_freq': 2, 'batch_size': 256, 'warm_up': 2048, \
@@ -83,12 +83,12 @@ IDAC_Gaussian_Alpha_Reparam_agent_config = {'agent_name': 'IDAC', 'gamma' : 0.99
 IDAC_Gaussian_Alpha_Reparam_agent_config['extension'] = {'name': 'Gaussian_Alpha_Reparam', 'use_implicit_actor': False, 'use_automatic_entropy_tuning': True}
 IDAC_Gaussian_Alpha_Reparam_agent_config['extension']['gaussian_actor_config'] = {'noise_dim': 5, 'log_sig_min': -20, 'log_sig_max': 2, \
                                                                             'log_prob_min': -5, 'log_prob_max': 5, 'use_reparam_trick': True}
-IDAC_Gaussian_Alpha_Reparam_agent_config['extension']['automatic_alpha_config'] = {'use_target_entropy' : True, 'target_entropy': 0.1}
+IDAC_Gaussian_Alpha_Reparam_agent_config['extension']['automatic_alpha_config'] = {'use_target_entropy' : False}
 
 
 IDAC_Implicit_No_Alpha_agent_config = {'agent_name': 'IDAC', 'gamma' : 0.99, 'tau': 0.005, 'update_freq': 2, 'batch_size': 256, 'warm_up': 2048, \
                         'lr_actor': 0.0003, 'lr_critic': 0.0003, 'buffer_size': 1000000, 'use_PER': False, 'use_ERE': False, 'reward_normalize' : False, \
-                        'alpha': 0.2, 'quantile_num': 32, 'noise_dim': 5}
+                        'alpha': 0.2, 'quantile_num': 16, 'noise_dim': 5}
 IDAC_Implicit_No_Alpha_agent_config['extension'] = {'name': 'Implicit_No_Alpha', 'use_implicit_actor': True, 'use_automatic_entropy_tuning': False}
 IDAC_Implicit_No_Alpha_agent_config['extension']['implicit_actor_config'] = {'action_num': 10, 'noise_dim': 5, 'log_sig_min': -20, 'log_sig_max': 2, \
                                                                             'log_prob_min': -5, 'log_prob_max': 5}
@@ -96,8 +96,8 @@ IDAC_Implicit_No_Alpha_agent_config['extension']['implicit_actor_config'] = {'ac
 
 IDAC_Implicit_Alpha_agent_config = {'agent_name': 'IDAC', 'gamma' : 0.99, 'tau': 0.005, 'update_freq': 2, 'batch_size': 256, 'warm_up': 2048, \
                         'lr_actor': 0.0003, 'lr_critic': 0.0003, 'buffer_size': 1000000, 'use_PER': False, 'use_ERE': False, 'reward_normalize' : False, \
-                        'alpha': 0.2, 'quantile_num': 32, 'noise_dim': 5}
+                        'alpha': 0.2, 'quantile_num': 16, 'noise_dim': 5}
 IDAC_Implicit_Alpha_agent_config['extension'] = {'name': 'Implicit_Alpha', 'use_implicit_actor': True, 'use_automatic_entropy_tuning': True}
 IDAC_Implicit_Alpha_agent_config['extension']['implicit_actor_config'] = {'action_num': 10, 'noise_dim': 5, 'log_sig_min': -20, 'log_sig_max': 2, \
                                                                             'log_prob_min': -5, 'log_prob_max': 5}
-IDAC_Implicit_Alpha_agent_config['extension']['automatic_alpha_config'] = {'use_target_entropy' : True, 'target_entropy': 0.1}
+IDAC_Implicit_Alpha_agent_config['extension']['automatic_alpha_config'] = {'use_target_entropy' : False}

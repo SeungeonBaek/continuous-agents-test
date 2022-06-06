@@ -15,11 +15,11 @@ TD3
 ## distributional DDPG
 SDPG  (...working)  
 IDAC (gaussian policy, no alpha, no reparam)  
-IDAC (gaussian policy, alpha, no reparam => ...working)  
+IDAC (gaussian policy, alpha, no reparam)  
 IDAC (gaussian policy, no alpha, reparam => ...working)  
 IDAC (gaussian policy, alpha, reparam => ...working)  
 IDAC (implicit policy, no alpha)  
-IDAC (implicit policy, alpha => ...working)  
+IDAC (implicit policy, alpha)  
 
 ## others
 PPO (...working)  
