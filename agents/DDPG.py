@@ -7,6 +7,7 @@ from tensorflow.keras import Model
 from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import LayerNormalization
 
 from utils.replay_buffer import ExperienceMemory
 from utils.prioritized_memory_numpy import PrioritizedMemory
@@ -18,17 +19,21 @@ class Actor(Model):
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
 
-        self.l1 = Dense(64, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1_ln = LayerNormalization(axis=-1)
         self.l2 = Dense(128, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2_ln = LayerNormalization(axis=-1)
         self.l3 = Dense(64, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l3_ln = LayerNormalization(axis=-1)
         self.l4 = Dense(32, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l4_ln = LayerNormalization(axis=-1)
         self.mu = Dense(action_space, activation='tanh')
 
     def call(self, state):
-        l1 = self.l1(state)
-        l2 = self.l2(l1)
-        l3 = self.l3(l2)
-        l4 = self.l4(l3)
+        l1 = self.l1_ln(self.l1(state))
+        l2 = self.l2_ln(self.l2(l1))
+        l3 = self.l3_ln(self.l3(l2))
+        l4 = self.l4_ln(self.l4(l3))
         mu = self.mu(l4)
 
         return mu
@@ -40,17 +45,21 @@ class Critic(Model):
         self.initializer = initializers.he_normal()
         self.regularizer = regularizers.l2(l=0.005)
         
-        self.l1 = Dense(64, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(256, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1_ln = LayerNormalization(axis=-1)
         self.l2 = Dense(128, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2_ln = LayerNormalization(axis=-1)
         self.l3 = Dense(64, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l3_ln = LayerNormalization(axis=-1)
         self.l4 = Dense(32, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l4_ln = LayerNormalization(axis=-1)
         self.value = Dense(1, activation = None)
 
     def call(self, state_action):
-        l1 = self.l1(state_action)
-        l2 = self.l2(l1)
-        l3 = self.l3(l2)
-        l4 = self.l4(l3)
+        l1 = self.l1_ln(self.l1(state_action))
+        l2 = self.l2_ln(self.l2(l1))
+        l3 = self.l3_ln(self.l3(l2))
+        l4 = self.l4_ln(self.l4(l3))
         value = self.value(l4)
 
         return value
@@ -130,7 +139,7 @@ class Agent:
         # print(f'in action, mu: {mu.shape}')
 
         if self.update_step > self.warm_up:
-            std = tf.convert_to_tensor([self.std]*4, dtype=tf.float32)
+            std = tf.convert_to_tensor([self.std]*self.act_space, dtype=tf.float32)
             dist = tfp.distributions.Normal(loc=mu, scale=std)
             action = tf.squeeze(dist.sample())
             action = action.numpy()
@@ -154,7 +163,7 @@ class Agent:
         # print(f'in trgt action, mu: {mu}')
 
         if self.update_step > self.warm_up:
-            std = tf.convert_to_tensor([self.std]*4, dtype=tf.float32)
+            std = tf.convert_to_tensor([self.std]*self.act_space, dtype=tf.float32)
             dist = tfp.distributions.Normal(loc=mu, scale=std)
             action = tf.squeeze(dist.sample())
 
