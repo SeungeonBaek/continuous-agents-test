@@ -106,15 +106,18 @@ class Agent:
         self.update_step = 0
 
         self.replay_buffer = ExperienceMemory(2000)
+        self.total_batch_size = self.agent_config['total_batch_size']
         self.batch_size = self.agent_config['batch_size']
+        self.warm_up = self.agent_config['warm_up']
         self.epoch = self.agent_config['epoch_num']
 
         self.entropy_coeff = self.agent_config['entropy_coeff']
         self.entropy_reduction_rate = self.agent_config['entropy_reduction_rate']
         self.epsilon = self.agent_config['epsilon']
 
-        self.batch_size = self.agent_config['batch_size']
-        self.warm_up = self.agent_config['warm_up']
+        self.std_bound = self.extension_config['std_bound']
+        self.log_prob_min = self.agent_config['log_prob_min']
+        self.log_prob_max = self.agent_config['log_prob_max']
 
         # network config
         self.actor_lr = self.agent_config['lr_actor']
@@ -133,7 +136,6 @@ class Agent:
         # extension config
         self.extension_config = self.agent_config['extension']
         self.extension_name = self.extension_config['name']
-        self.std_bound = self.extension_config['std_bound']
 
         if self.extension_config['use_GAE']:
             self.use_gae_norm = self.extension_config['gae_config']['use_gae_norm']
@@ -142,6 +144,8 @@ class Agent:
         if self.extension_config['use_SIL']:
             self.sil_config = self.extension_config['SIL_config']
 
+            self.sil_update_step = 0
+
             self.sil_buffer = SILExperienceMemory(self.sil_config['buffer_size'], 0.6, 0.1)
             self.sil_batch_size = self.sil_config['batch_size']
             self.sil_epoch = self.sil_config['epoch']
@@ -149,8 +153,8 @@ class Agent:
             self.sil_lr = self.sil_config['lr_sil']
             self.sil_opt = Adam(learning_rate=self.sil_lr)
 
-            self.sil_update_step = 0
-
+            self.sil_value_coeff = self.sil_config['value_coefficient']
+            self.return_criteria = self.sil_config['return_criteria']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
@@ -159,7 +163,8 @@ class Agent:
         std = tfp.math.clip_by_value_preserve_gradient(std_, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1])
         dist = tfp.distributions.Normal(loc=mu, scale=std)
         action = tf.squeeze(dist.sample())
-        log_policy = tf.reduce_sum(dist.log_prob(action), 1, keepdims=False)
+        log_prob = tfp.math.clip_by_value_preserve_gradient(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
+        log_policy = tf.reduce_sum(log_prob, axis=1, keepdims=False)
 
         action = action.numpy()
         action = np.clip(action, -1, 1)
@@ -192,7 +197,9 @@ class Agent:
         return gaes, target
 
     def update(self):
-        update = True
+        if self.replay_buffer._len() < self.total_batch_size:
+            return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
         self.update_step += 1
 
         states, next_states, rewards, actions, old_log_policies, dones = self.replay_buffer.sample()
@@ -319,6 +326,9 @@ class Agent:
         self.entropy_coeff *= self.entropy_reduction_rate
 
         return True, entropy_mem, ratio_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
+
+    def sil_update(self):
+        pass
 
     def save_xp(self, state, next_state, reward, action, log_policy, done):
         # Store transition in the replay buffer.

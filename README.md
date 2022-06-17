@@ -8,11 +8,11 @@ meta-drive
 still not slected  
 
 # RL Algorithms
-## DDPG family
+## Deterministic policy
 DDPG  
 TD3  
 
-## distributional DDPG
+## Distributional DDPG
 SDPG  (...working)  
 IDAC (gaussian policy, no alpha, no reparam)  
 IDAC (gaussian policy, alpha, no reparam)  
@@ -21,17 +21,15 @@ IDAC (gaussian policy, alpha, reparam => ...working)
 IDAC (implicit policy, no alpha)  
 IDAC (implicit policy, alpha)  
 
-## others
+## Stochastic policy
 PPO (...working)  
 SAC (...working)  
 
-# RL extension Algorithms
-Still not selected  
-
-## for others
-MEPPO (...working)  
-gSDE(for DDPG, TD3, SAC) (...refactoring)  
-TQC(for DDPG, TD3, SAC) (...working)  
+## RL extension algorithms
+PPO-SIL (...working)   
+MEPPO (...working)   
+gSDE(for DDPG, TD3, SAC) (...refactoring)   
+TQC(for DDPG, TD3, SAC) (...working)   
 
 ## License
 
@@ -54,6 +52,8 @@ Please 'just' use these code and just 'refer' the url of repository in any form.
 [6] [PPO](https://arxiv.org/abs/1707.06347)
 
 [7] [SAC](https://arxiv.org/abs/1801.01290)
+
+[8] [SIL]()
 
 ## Reference - github
 
