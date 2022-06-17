@@ -131,8 +131,6 @@ class Agent:
         self.critic_opt = Adam(self.critic_lr)
         self.critic.compile(optimizer=self.critic_opt)
 
-        self.value_coeff = self.agent_config['value_coefficient']
-
         # extension config
         self.extension_config = self.agent_config['extension']
         self.extension_name = self.extension_config['name']
@@ -265,14 +263,13 @@ class Agent:
 
             self.critic_opt.apply_gradients(zip(grads_critic, critic_variable))
 
-
             actor_variable = self.actor.trainable_variables   
             with tf.GradientTape() as tape:
                 tape.watch(actor_variable)
                 train_mu, train_std = self.actor(tf.convert_to_tensor(batch_state, dtype=tf.float32))
                 # print(f'train_mu : {train_mu.shape}, train_std : {train_std.shape}')
 
-                train_dist = tfp.distributions.Normal(loc = train_mu, scale = tf.math.abs(train_std))
+                train_dist = tfp.distributions.Normal(loc = train_mu, scale = train_std)
 
                 entropy = tf.reduce_mean(train_dist.entropy())
                 # print(f'entropy : {entropy.shape}')
@@ -298,7 +295,8 @@ class Agent:
 
                 surr1 = tf.multiply(train_adv, ratio)
                 # print(f'surr1 : {surr1.shape}')
-                surr2 = tf.multiply(train_adv, tf.clip_by_value(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon))
+                surr2 = tf.multiply(train_adv, tfp.math.clip_by_value_preserve_gradient(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon))
+                # surr2 = tf.multiply(train_adv, tf.clip_by_value(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon))
                 # print(f'surr2 : {surr2.shape}')
 
                 minimum = tf.minimum(surr1, surr2)
@@ -325,10 +323,111 @@ class Agent:
             
         self.entropy_coeff *= self.entropy_reduction_rate
 
+        self.replay_buffer.clear()
+
         return True, entropy_mem, ratio_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
 
-    def sil_update(self):
-        pass
+    def self_imitation_learning(self):
+        if self.sil_buffer._len() < self.total_batch_size:
+            return False, 0.0, 0.0, 0.0, 0.0, 0.0
+        else:
+            state, action, return_g, index, weight = self.sil_buffer.sample(self.sil_batch_size)
+
+            critic_variable = self.critic.trainable_variables
+            actor_variable  = self.actor.trainable_variables  
+            with tf.GradientTape() as tape_sil_for_critic, tf.GradientTape() as tape_sil_for_actor:
+                tape_sil_for_critic.watch(critic_variable)
+                tape_sil_for_actor.watch(actor_variable)
+
+                train_return_g = tf.convert_to_tensor(return_g, dtype=tf.float32)
+                train_weight = tf.convert_to_tensor(weight, dtype=tf.float32)
+                train_action = tf.convert_to_tensor(action, dtype=tf.float32)
+
+                train_mu, train_std, train_current_value = self.ppo(tf.convert_to_tensor(state, dtype=tf.float32))
+                train_current_value = tf.squeeze(train_current_value) ; # train_current_value = tf.reshape(train_current_value, [self.sil_batch_size,1])
+                # train_std_ = tf.stop_gradient(tf.clip_by_value(train_std, clip_value_min=self.std_bound[0], clip_value_max=1))
+                train_dist = tfp.distributions.Normal(loc = train_mu, scale = train_std)
+
+                train_adv = train_return_g - train_current_value
+                train_mask = tf.where(train_adv > 0.0, tf.ones_like(train_adv), tf.zeros_like(train_adv)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
+                train_num_samples = tf.reduce_sum(train_mask)
+
+                if (train_num_samples.numpy() == 0):
+                    print('sil pass because good samples 0')
+                    return False, 0, 0, 0, 0, 0, 0
+
+                # print('sil run')
+                entropy_raw = tf.reduce_mean(train_dist.entropy(), 1, keepdims=False)
+                entropy_weight = tf.multiply(tf.multiply(train_weight, entropy_raw), train_mask)
+                entropy = tf.reduce_sum(entropy_weight) / train_num_samples # 배치별 entropy를 평균 내줌
+
+                train_log_policy = tf.reduce_mean(train_dist.log_prob(train_action), 1, keepdims=False)
+                train_clipped_log_policy = tf.stop_gradient(tf.clip_by_value(train_log_policy, clip_value_min=-10, clip_value_max=10))
+
+                pi_loss_raw = tf.multiply(tf.multiply(tf.multiply(train_adv, train_clipped_log_policy),train_weight), train_mask)
+                pi_loss = tf.reduce_sum(pi_loss_raw) / train_num_samples
+                pi_loss_entropy = pi_loss - entropy * self.ppo_ent # entropy를 바로 사용하지 않고 entropy coefficent를 곱해줌
+
+                train_sil_value_error = tf.multiply(tf.multiply(train_adv, train_weight), train_mask)
+                value_loss = tf.reduce_sum(tf.square(train_sil_value_error)) / train_num_samples
+                total_loss = pi_loss_entropy + self.ppo_sil_val * value_loss
+
+                advantages = deepcopy(tf.multiply(train_adv, train_mask)) # 0 이하면 그냥 0으로 업데이트
+
+            grads_critic, _ = tf.clip_by_global_norm(tape_sil_for_critic.gradient(critic_loss, critic_variable), 0.5)
+            grads_actor, _ = tf.clip_by_global_norm(tape_sil_for_actor.gradient(actor_loss, actor_variable), 0.5)
+
+            self.sil_opt.apply_gradients(zip(grads_critic, critic_variable))
+            self.sil_opt.apply_gradients(zip(grads_actor, actor_variable))
+            self.sil_update_step += 1
+
+            value_target = (tf.reduce_sum(tf.multiply(tf.multiply(train_weight, train_return_g), train_mask)) / train_num_samples).numpy()
+            value_cur = (tf.reduce_sum(tf.multiply(tf.multiply(train_weight, train_current_value), train_mask)) / train_num_samples).numpy()
+
+            advantages = np.squeeze(advantages.numpy())
+            self.sil_buffer.update(index, advantages)
+
+        return True, entropy.numpy(), pi_loss_entropy.numpy(), value_target, value_cur, value_loss.numpy(), total_sil_loss.numpy()
+
+    def update_buffer(self, trajectory):
+        better_return = False
+        
+        for r in trajectory['reward']:
+            if r > self.return_criteria:
+                better_return = True
+                break
+        
+        if better_return:
+            self.add_episode(trajectory)
+
+    def add_episode(self, trajectory):
+        for key in trajectory.keys():
+            if key == 'state':
+                states = trajectory[key]
+
+            elif key == 'reward':
+                rewards = trajectory[key]
+
+            elif key == 'action':
+                actions = trajectory[key]
+
+            elif key == 'done':
+                dones = trajectory[key]
+
+        returns_g = self.discount_with_dones(rewards, dones, self.gamma)
+        
+        for (state, action, return_g) in list(zip(states, actions, returns_g)):
+            self.sil_buffer.add((state, action, return_g))
+            
+    def discount_with_dones(self, rewards, dones, gamma):
+        discounted = []
+        r = 0
+
+        for reward, done in zip(rewards[::-1], dones[::-1]):
+            r = reward + gamma * r * (1. - done)
+            discounted.append(r)
+        
+        return discounted[::-1]
 
     def save_xp(self, state, next_state, reward, action, log_policy, done):
         # Store transition in the replay buffer.
