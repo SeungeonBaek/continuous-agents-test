@@ -10,6 +10,7 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import LayerNormalization
 
 from utils.replay_buffer_PPO import ExperienceMemory
+from utils.replay_buffer_SIL import SILExperienceMemory
 from copy import deepcopy
 
 
@@ -28,7 +29,7 @@ class Actor(Model):
         self.l4 = Dense(32, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l4_ln = LayerNormalization(axis=-1)
         self.mu = Dense(action_space, activation='tanh')
-        self.std = Dense(action_space, activation='tanh')
+        self.std = Dense(action_space, activation='softplus')
 
     def call(self, state):
         l1 = self.l1_ln(self.l1(state))
@@ -101,8 +102,6 @@ class Agent:
         print(f'obs_space: {self.obs_space}, act_space: {self.act_space}')
 
         self.gamma = self.agent_config['gamma']
-        self.lamda = self.agent_config['lambda']
-        self.gae_normalize = self.agent_config['use_GAE']
 
         self.update_step = 0
 
@@ -114,7 +113,8 @@ class Agent:
         self.entropy_reduction_rate = self.agent_config['entropy_reduction_rate']
         self.epsilon = self.agent_config['epsilon']
 
-        self.reward_normalize = self.agent_config['reward_normalize']
+        self.batch_size = self.agent_config['batch_size']
+        self.warm_up = self.agent_config['warm_up']
 
         # network config
         self.actor_lr = self.agent_config['lr_actor']
@@ -128,17 +128,36 @@ class Agent:
         self.critic_opt = Adam(self.critic_lr)
         self.critic.compile(optimizer=self.critic_opt)
 
+        self.value_coeff = self.agent_config['value_coefficient']
+
         # extension config
         self.extension_config = self.agent_config['extension']
         self.extension_name = self.extension_config['name']
         self.std_bound = self.extension_config['std_bound']
 
+        if self.extension_config['use_GAE']:
+            self.use_gae_norm = self.extension_config['gae_config']['use_gae_norm']
+            self.lamda = self.agent_config['lambda']
+        
+        if self.extension_config['use_SIL']:
+            self.sil_config = self.extension_config['SIL_config']
+
+            self.sil_buffer = SILExperienceMemory(self.sil_config['buffer_size'], 0.6, 0.1)
+            self.sil_batch_size = self.sil_config['batch_size']
+            self.sil_epoch = self.sil_config['epoch']
+
+            self.sil_lr = self.sil_config['lr_sil']
+            self.sil_opt = Adam(learning_rate=self.sil_lr)
+
+            self.sil_update_step = 0
+
+
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
 
         mu, std_ = self.actor(obs)
-        std = tf.stop_gradient(tf.clip_by_value(std_, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
-        dist = tfp.distributions.Normal(loc=mu, scale=tf.math.abs(std))
+        std = tfp.math.clip_by_value_preserve_gradient(std_, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1])
+        dist = tfp.distributions.Normal(loc=mu, scale=std)
         action = tf.squeeze(dist.sample())
         log_policy = tf.reduce_sum(dist.log_prob(action), 1, keepdims=False)
 
@@ -165,7 +184,7 @@ class Agent:
         else:
             gaes_norm = (gaes - gaes.mean()) / (gaes.std() - 1e-8)
 
-        if self.gae_normalize:
+        if self.use_gae_norm:
             gaes = gaes_norm
 
         target = gaes + values
@@ -191,7 +210,7 @@ class Agent:
         next_values = self.critic(tf.convert_to_tensor(next_states, dtype=tf.float32))
         next_values = np.array(next_values)
 
-        if self.reward_normalize:
+        if self.agent_config['reward_normalize']:
             rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
 
         advs, targets = self.get_gaes(rewards=rewards,dones=dones,values=values,next_values=next_values)
