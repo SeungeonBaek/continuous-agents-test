@@ -24,12 +24,13 @@ IDAC (implicit policy, alpha)
 ## Stochastic policy
 PPO (...working)  
 SAC (...working)  
+PPG (...working)  
 
 ## RL extension algorithms
-PPO-SIL (...working)   
-MEPPO (...working)   
-gSDE(for DDPG, TD3, SAC) (...refactoring)   
-TQC(for DDPG, TD3, SAC) (...working)   
+Self-Imitation Learning (...working)   
+Model ensemble PPO (...working)   
+gSDE(for DDPG, TD3, SAC, PPO) (...refactoring)   
+TQC(for DDPG, TD3, SAC, PPO) (...working)   
 
 ## License
 
@@ -51,9 +52,16 @@ Please 'just' use these code and just 'refer' the url of repository in any form.
 
 [6] [PPO](https://arxiv.org/abs/1707.06347)
 
-[7] [SAC](https://arxiv.org/abs/1801.01290)
+[7] [ME TRPO](https://arxiv.org/pdf/1802.10592.pdf)
 
-[8] [SIL]()
+[8] [SAC](https://arxiv.org/abs/1801.01290)
+
+[9] [Self-Imitation Learning - SIL](https://arxiv.org/abs/1806.05635)
+
+[10] [TQC](https://arxiv.org/pdf/2005.04269.pdf)
+
+[11] [gSDE](https://arxiv.org/abs/2005.05719)
+
 
 ## Reference - github
 
