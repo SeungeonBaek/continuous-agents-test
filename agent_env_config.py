@@ -39,37 +39,51 @@ def env_agent_config(env_switch, agent_switch):
         from agent_config import ME_PPO_agent_config
         agent_config = ME_PPO_agent_config
     elif agent_switch == 9:
+        from agent_config import PPO_SIL_agent_config
+        agent_config = PPO_SIL_agent_config
+    elif agent_switch == 10:
         from agent_config import PPO_gSDE_agent_config
         agent_config = PPO_gSDE_agent_config
 
+   # PPG # Todo
+    elif agent_switch == 11:
+        from agent_config import PPG_Vanilla_agent_config
+        agent_config = PPG_Vanilla_agent_config
+    elif agent_switch == 12:
+        from agent_config import PPG_SIL_agent_config
+        agent_config = PPG_SIL_agent_config
+    elif agent_switch == 13:
+        from agent_config import PPG_gSDE_agent_config
+        agent_config = PPG_gSDE_agent_config
+
     # SAC
-    elif agent_switch == 10:
+    elif agent_switch == 14:
         from agent_config import SAC_Vanilla_agent_config
         agent_config = SAC_Vanilla_agent_config
-    elif agent_switch == 11:
+    elif agent_switch == 15:
         from agent_config import SAC_TQC_agent_config
         agent_config = SAC_TQC_agent_config
-    elif agent_switch == 12:
+    elif agent_switch == 16:
         from agent_config import SAC_gSDE_agent_config
         agent_config = SAC_gSDE_agent_config
 
     # IDAC
-    elif agent_switch == 13:
+    elif agent_switch == 17:
         from agent_config import IDAC_Gaussian_No_Alpha_No_Reparam_agent_config
         agent_config = IDAC_Gaussian_No_Alpha_No_Reparam_agent_config
-    elif agent_switch == 14:
+    elif agent_switch == 18:
         from agent_config import IDAC_Gaussian_No_Alpha_Reparam_agent_config
         agent_config = IDAC_Gaussian_No_Alpha_Reparam_agent_config
-    elif agent_switch == 15:
+    elif agent_switch == 19:
         from agent_config import IDAC_Gaussian_Alpha_No_Reparam_agent_config
         agent_config = IDAC_Gaussian_Alpha_No_Reparam_agent_config
-    elif agent_switch == 16:
+    elif agent_switch == 20:
         from agent_config import IDAC_Gaussian_Alpha_Reparam_agent_config
         agent_config = IDAC_Gaussian_Alpha_Reparam_agent_config
-    elif agent_switch == 17:
+    elif agent_switch == 21:
         from agent_config import IDAC_Implicit_No_Alpha_agent_config
         agent_config = IDAC_Implicit_No_Alpha_agent_config
-    elif agent_switch == 18:
+    elif agent_switch == 22:
         from agent_config import IDAC_Implicit_Alpha_agent_config
         agent_config = IDAC_Implicit_Alpha_agent_config
 

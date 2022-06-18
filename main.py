@@ -116,15 +116,16 @@ if __name__ == '__main__':
     Agent
     1: DDPG, 2: DDPG_TQC, 3: DDPG_gSDE
     4: TD3,  5: TD3_TQC,  6: TD3_gSDE
-    7: PPO,  8: MEPPO,    9: PPO_gSDE
-    10: SAC, 11: SAC_TQC, 12: SAC_gSDE
-    13: IDAC_Gaussian_No_Alpha_No_Reparam, 14: IDAC_Gaussian_No_Alpha_Reparam,
-    15: IDAC_Gaussian_Alpha_No_Reparam, 16: IDAC_Gaussian_Alpha_Reparam
-    17: IDAC_Implicit_No_Alpha, 18: IDAC_Implicit_Alpha
+    7: PPO,  8: MEPPO,    9: PPO_SIL,  10: PPO_gSDE
+    11: PPG, 12: PPG_SIL, 13: PPG_gSDE
+    14: SAC, 15: SAC_TQC, 16: SAC_gSDE
+    17: IDAC_Gaussian_No_Alpha_No_Reparam, 18: IDAC_Gaussian_No_Alpha_Reparam,
+    19: IDAC_Gaussian_Alpha_No_Reparam, 20: IDAC_Gaussian_Alpha_Reparam
+    21: IDAC_Implicit_No_Alpha, 22: IDAC_Implicit_Alpha
     """
     
     env_switch = 1
-    agent_switch = 18 # 13 => 14 => 17 => 15 => 16 => 18 순으로 테스트
+    agent_switch = 7
 
     env_config, agent_config = env_agent_config(env_switch, agent_switch)
     
