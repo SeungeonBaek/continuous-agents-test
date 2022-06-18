@@ -56,7 +56,7 @@ Please 'just' use these code and just 'refer' the url of repository in any form.
 
 [8] [SAC](https://arxiv.org/abs/1801.01290)  
 
-[9] [PPG]()  
+[9] [PPG](https://arxiv.org/abs/2009.04416)  
 
 [10] [Self-Imitation Learning - SIL](https://arxiv.org/abs/1806.05635)  
 
