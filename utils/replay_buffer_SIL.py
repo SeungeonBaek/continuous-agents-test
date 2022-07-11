@@ -1,11 +1,14 @@
 import typing
 from typing import Tuple
+from numpy.typing import NDArray
+
 import random
 import numpy as np
-from sum_tree import SumTree
+from utils.sum_tree import SumTree
+
 
 class SILExperienceMemory:
-    def __init__(self, capacity:int, alpha, beta):
+    def __init__(self, capacity: int, alpha: float, beta: float):
         self.tree = SumTree(capacity)
         self.capacity = capacity
         self.e = 0.01
@@ -19,7 +22,7 @@ class SILExperienceMemory:
         return np.abs(error) ** self.alpha
 
     # add trajectory in prioritiy memory
-    def add(self, experience:tuple) -> None:
+    def add(self, experience: Tuple) -> None:
         state, action, return_g = experience
 
         if return_g > 0:
@@ -30,7 +33,7 @@ class SILExperienceMemory:
         self.tree.add(p, list([state, action, return_g])) # 확인 필요
 
     # get samples from priority memory according mini batch size n
-    def sample(self, batch_size:int):
+    def sample(self, batch_size: int)-> Tuple[NDArray]:
         states = np.array([], dtype=np.float64)
         actions = np.array([], dtype=np.int32)
         returns_g = np.array([], dtype=np.float64)
@@ -86,7 +89,7 @@ class SILExperienceMemory:
         return states, actions, returns_g, indices, weights
 
     # update priorities of prioritized memory
-    def update(self, indices, returns_g) -> None:
+    def update(self, indices: NDArray, returns_g: NDArray) -> None:
         for return_g, idx in zip(returns_g, indices):
             # print('in update : ', idx)
             if return_g > 0:

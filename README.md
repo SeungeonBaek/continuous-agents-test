@@ -27,6 +27,9 @@ SAC (...working)
 PPG (...working)  
 
 ## RL extension algorithms
+Prioritized Experience Replay(PER)   
+Emphasizing Recent Experience replay(ERE, ...working)   
+
 Self-Imitation Learning (...working)   
 Model ensemble PPO (...working)   
 gSDE(for DDPG, TD3, SAC, PPO) (...refactoring)   
@@ -58,11 +61,15 @@ Please 'just' use these code and just 'refer' the url of repository in any form.
 
 [9] [PPG](https://arxiv.org/abs/2009.04416)  
 
-[10] [Self-Imitation Learning - SIL](https://arxiv.org/abs/1806.05635)  
+[10] [PER](https://arxiv.org/abs/1511.05952?context=cs)
 
-[11] [TQC](https://arxiv.org/pdf/2005.04269.pdf)  
+[11] [ERE](https://arxiv.org/abs/1906.04009)
 
-[12] [gSDE](https://arxiv.org/abs/2005.05719)  
+[12] [Self-Imitation Learning - SIL](https://arxiv.org/abs/1806.05635)  
+
+[13] [TQC](https://arxiv.org/pdf/2005.04269.pdf)  
+
+[14] [gSDE](https://arxiv.org/abs/2005.05719)  
 
 
 ## Reference - github
