@@ -45,6 +45,18 @@ class RLLogger():
         elif self.agent_config['agent_name'] == 'IDAC':
             updated, alpha_loss, actor_loss, critic_1_loss, critic_2_loss, trgt_q_mean, critic_1_value, critic_2_value = Agent.update()
 
+        elif self.agent_config['agent_name'] == 'PPO':
+            if self.agent_config['extension']['name'] == 'MEPPO':
+                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+            elif self.agent_config['extension']['name'] == 'SIL':
+                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+                sil_updated, sil_entropy, sil_actor_loss, sil_target_return, sil_critic_value, sil_critic_loss = Agent.self_imitation_learning()
+
+            elif self.agent_config['extension']['name'] == 'gSDE':
+                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+            else:
+                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+
         if self.agent_config['agent_name'] == 'DDPG':
             if updated:
                 self.summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
@@ -58,6 +70,22 @@ class RLLogger():
                 self.summary_writer.add_scalar('02_Critic/Target_Q_mean', trgt_q_mean, Agent.update_step)
                 self.summary_writer.add_scalar('02_Critic/Critic_1_value', critic_1_value, Agent.update_step)
                 self.summary_writer.add_scalar('02_Critic/Critic_2_value', critic_2_value, Agent.update_step)
+        elif self.agent_config['agent_name'] == 'PPO':
+            if updated:
+                self.summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
+                self.summary_writer.add_scalar('01_Loss/Actor_loss', actor_loss, Agent.update_step)
+                self.summary_writer.add_scalar('02_Critic/Advantage', advantage, Agent.update_step)
+                self.summary_writer.add_scalar('02_Critic/Target_value', target_val, Agent.update_step)
+                self.summary_writer.add_scalar('02_Critic/Critic_value', critic_value, Agent.update_step)
+                self.summary_writer.add_scalar('03_Actor/Entropy', entropy, Agent.update_step)
+                self.summary_writer.add_scalar('03_Actor/Ratio', ratio, Agent.update_step)
+            if self.agent_config['extension']['name'] == 'SIL':
+                if sil_updated:
+                    self.summary_writer.add_scalar('01_Loss/SIL_Critic_loss', sil_critic_loss, Agent.sil_update_step)
+                    self.summary_writer.add_scalar('01_Loss/SIL_Actor_loss', sil_actor_loss, Agent.sil_update_step)
+                    self.summary_writer.add_scalar('02_Critic/SIL_Target_return', sil_target_return, Agent.sil_update_step)
+                    self.summary_writer.add_scalar('02_Critic/SIL_Critic_value', sil_critic_value, Agent.sil_update_step)
+                    self.summary_writer.add_scalar('03_Actor/SIL_Entropy', sil_entropy, Agent.sil_update_step)
         elif self.agent_config['agent_name'] == 'SAC':
             if updated:
                 self.summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
@@ -141,22 +169,8 @@ class RLLogger():
 
     def episode_logging_tensorboard(self, Agent, episode_score, episode_step, episode_num, episode_rewards):
         if self.agent_config['agent_name'] == 'PPO':
-            if self.agent_config['extension']['name'] == 'MEPPO':
-                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
-            elif self.agent_config['extension']['name'] == 'gSDE':
-                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
-            else:
-                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
-
-            if updated:
-                self.summary_writer.add_scalar('01_Loss/Critic_loss', critic_loss, Agent.update_step)
-                self.summary_writer.add_scalar('01_Loss/Actor_loss', actor_loss, Agent.update_step)
-                self.summary_writer.add_scalar('02_Critic/Advantage', advantage, Agent.update_step)
-                self.summary_writer.add_scalar('02_Critic/Target_value', target_val, Agent.update_step)
-                self.summary_writer.add_scalar('02_Critic/Critic_value', critic_value, Agent.update_step)
-                self.summary_writer.add_scalar('03_Actor/Entropy', entropy, Agent.update_step)
-                self.summary_writer.add_scalar('03_Actor/Ratio', ratio, Agent.update_step)
-
+            if self.agent_config['extension']['name'] == 'SIL':
+                Agent.return_criteria = ((episode_num -1) / episode_num) * Agent.return_criteria + (1 / episode_num) * episode_score
         self.summary_writer.add_scalar('00_Episode/Score', episode_score, episode_num)
         self.summary_writer.add_scalar('00_Episode/Average_reward', episode_score/episode_step, episode_num)
         self.summary_writer.add_scalar('00_Episode/Steps', episode_step, episode_num)

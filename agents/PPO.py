@@ -13,6 +13,8 @@ from utils.replay_buffer_PPO import ExperienceMemory
 from utils.replay_buffer_SIL import SILExperienceMemory
 from copy import deepcopy
 
+tf.executing_eagerly()
+
 
 class Actor(Model):
     def __init__(self, obs_space, action_space):
@@ -60,9 +62,9 @@ class Critic(Model):
 
     def call(self, state):
         l1 = self.l1_ln(self.l1(state))
-        l2 = self.l1_ln(self.l2(l1))
-        l3 = self.l1_ln(self.l3(l2))
-        l4 = self.l1_ln(self.l4(l3))
+        l2 = self.l2_ln(self.l2(l1))
+        l3 = self.l3_ln(self.l3(l2))
+        l4 = self.l4_ln(self.l4(l3))
         value = self.value(l4)
 
         return value
@@ -174,19 +176,20 @@ class Agent:
         mu, std_ = self.actor(obs)
         std = tf.clip_by_value(std_, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1])
         dist = tfp.distributions.Normal(loc=mu, scale=std)
-        action = tf.squeeze(dist.sample())
-        log_prob = tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max)
-        log_policy = tf.reduce_sum(log_prob, axis=1, keepdims=False)
+        action = dist.sample()
+        # print(f'in action, obs : {obs.shape}')
+        # print(f'mu, std_ : {mu.shape}, {std_.shape}')
+        # print(f'action : {action.shape}')
 
-        action = action.numpy()
+        log_prob = tf.squeeze(tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max), axis=-1)
+        # print(f'log_prob : {log_prob.shape}')
+        log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=False)
+        # print(f'log_prob : {log_prob.shape}')
+
+        action = tf.squeeze(action).numpy()
         action = np.clip(action, -1, 1)
 
-        # print(f'in get action, obs : {obs.shape}')
-        # print(f'mu, std : {mu.shape}, {std.shape}')
-        # print(f'action : {action}')
-        # print(f'log_policy : {log_policy}')
-
-        return action, log_policy.numpy()
+        return action, log_prob.numpy()[0]
     
     def get_gaes(self, rewards, dones, values, next_values):
         deltas = [r + self.gamma * (1 - d) * nv - v for r, d, v, nv in zip(rewards, dones, values, next_values)]
@@ -261,21 +264,17 @@ class Agent:
             critic_variable = self.critic.trainable_variables
             with tf.GradientTape() as tape_critic:
                 tape_critic.watch(critic_variable)
-                current_value = self.critic(tf.convert_to_tensor(batch_states, dtype=tf.float32))
-                print(f'current_value : {current_value.shape}')
-                current_value = tf.squeeze(current_value)
-                print(f'current_value : {current_value.shape}')
+                current_value = tf.squeeze(self.critic(tf.convert_to_tensor(batch_states, dtype=tf.float32)))
+                # print(f'current_value : {current_value.shape}')
 
-                target_value = tf.convert_to_tensor(batch_targets, dtype=tf.float32)
-                print(f'target_value : {target_value.shape}')
-                target_value = tf.squeeze(target_value)
-                print(f'target_value : {target_value.shape}')
+                target_value = tf.squeeze(tf.convert_to_tensor(batch_targets, dtype=tf.float32))
+                # print(f'target_value : {target_value.shape}')
 
                 td_error = tf.subtract(current_value, target_value)
-                print(f'td_error : {td_error.shape}')
+                # print(f'td_error : {td_error.shape}')
 
                 critic_loss = tf.math.reduce_mean(tf.math.square(td_error))
-                print(f'critic_loss : {critic_loss.shape}')
+                # print(f'critic_loss : {critic_loss.shape}')
 
             grads_critic, _ = tf.clip_by_global_norm(tape_critic.gradient(critic_loss, critic_variable), 0.5)
 
@@ -285,48 +284,43 @@ class Agent:
             with tf.GradientTape() as tape:
                 tape.watch(actor_variable)
                 mu, std = self.actor(tf.convert_to_tensor(batch_states, dtype=tf.float32))
-                print(f'mu : {mu.shape}, std : {std.shape}')
+                # print(f'mu : {mu.shape}, std : {std.shape}')
 
                 dist = tfp.distributions.Normal(loc = mu, scale = tfp.math.clip_by_value_preserve_gradient(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
 
                 entropy = tf.reduce_mean(dist.entropy())
-                print(f'entropy : {entropy.shape}')
+                # print(f'entropy : {entropy.shape}')
 
                 actions = tf.convert_to_tensor(batch_actions, dtype=tf.float32)
-                print(f'action : {action.shape}')
+                # print(f'actions : {actions.shape}')
 
                 log_policy = tf.reduce_sum(dist.log_prob(actions), 1, keepdims=False)
-                print(f'log_policy : {log_policy.shape}')
+                # print(f'log_policy : {log_policy.shape}')
 
                 old_log_policy = tf.convert_to_tensor(batch_old_log_policies, dtype=tf.float32)
-                print(f'old_log_policy : {old_log_policy.shape}')
-                old_log_policy = tf.squeeze(batch_old_log_policies)
-                print(f'old_log_policy : {old_log_policy.shape}')
+                # print(f'old_log_policy : {old_log_policy.shape}')
 
-                adv = tf.convert_to_tensor(batch_advs, dtype=tf.float32)
-                print(f'adv : {adv.shape}')
-                adv = tf.squeeze(adv)
-                print(f'adv : {adv.shape}')
+                adv = tf.squeeze(tf.convert_to_tensor(batch_advs, dtype=tf.float32))
+                # print(f'adv : {adv.shape}')
 
                 ratio = tf.exp(log_policy - old_log_policy)
-                print(f'ratio : {ratio.shape}')
+                # print(f'ratio : {ratio.shape}')
 
                 surr1 = tf.multiply(adv, ratio)
-                print(f'surr1 : {surr1.shape}')
+                # print(f'surr1 : {surr1.shape}')
                 surr2 = tf.multiply(adv, tfp.math.clip_by_value_preserve_gradient(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon)) # ambiguous whether the preserving the gradient of ratio
                 # surr2 = tf.multiply(adv, tf.clip_by_value(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon))
-                print(f'surr2 : {surr2.shape}')
+                # print(f'surr2 : {surr2.shape}')
 
                 minimum = tf.minimum(surr1, surr2)
-                print(f'minimum : {minimum.shape}')
+                # print(f'minimum : {minimum.shape}')
 
                 actor_loss = -tf.reduce_mean(minimum) - self.entropy_coeff * entropy
-                print(f'actor_loss : {actor_loss.shape}')
+                # print(f'actor_loss : {actor_loss.shape}')
 
             grads, _ = tf.clip_by_global_norm(tape.gradient(actor_loss, actor_variable), 0.5)
 
             self.actor_opt.apply_gradients(zip(grads, actor_variable))
-            raise RuntimeError('debug')
 
             advantage = tf.reduce_mean(adv).numpy()
             target_value = tf.reduce_mean(target_value).numpy()
