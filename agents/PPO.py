@@ -25,12 +25,10 @@ class Actor(Model):
 
         self.l1 = Dense(512, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
-        self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2 = Dense(512, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2_ln = LayerNormalization(axis=-1)
         self.l3 = Dense(64, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
-        self.l4 = Dense(32, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
-        self.l4_ln = LayerNormalization(axis=-1)
         self.mu = Dense(action_space, activation='tanh')
         self.std = Dense(action_space, activation='softplus')
 
@@ -38,9 +36,8 @@ class Actor(Model):
         l1 = self.l1_ln(self.l1(state))
         l2 = self.l2_ln(self.l2(l1))
         l3 = self.l3_ln(self.l3(l2))
-        l4 = self.l4_ln(self.l4(l3))
-        mu = self.mu(l4)
-        std = self.std(l4)
+        mu = self.mu(l3)
+        std = self.std(l3)
 
         return mu, std
 
@@ -131,6 +128,10 @@ class Agent:
         self.epsilon = self.agent_config['epsilon']
 
         self.std_bound = self.agent_config['std_bound']
+
+        self.reward_min = self.agent_config['reward_min']
+        self.reward_max = self.agent_config['reward_max']
+
         self.log_prob_min = self.agent_config['log_prob_min']
         self.log_prob_max = self.agent_config['log_prob_max']
 
@@ -162,6 +163,7 @@ class Agent:
 
             self.sil_buffer = SILExperienceMemory(self.sil_config['buffer_size'], 0.6, 0.1)
             self.sil_batch_size = self.sil_config['batch_size']
+            self.sil_epoch = self.sil_config['epoch_num']
 
             self.sil_log_prob_min = self.sil_config['log_prob_min']
             self.sil_log_prob_max = self.sil_config['log_prob_min']
@@ -239,7 +241,7 @@ class Agent:
 
         if self.agent_config['reward_normalize']:
             # raw_rewards = (raw_rewards - raw_rewards.mean()) / (raw_rewards.std() + 1e-5)
-            raw_rewards = np.clip(raw_rewards, -20, 20)
+            raw_rewards = np.clip(raw_rewards, self.reward_min, self.reward_max)
 
         raw_advs, raw_targets = self.get_gaes(rewards=raw_rewards,
                                       dones=raw_dones,
@@ -300,7 +302,7 @@ class Agent:
                 actions = tf.convert_to_tensor(batch_actions, dtype=tf.float32)
                 # print(f'actions : {actions.shape}')
 
-                log_policy = tf.squeeze(tfp.math.clip_by_value_preserve_gradient(dist.log_prob(actions)[..., tf.newaxis], self.log_prob_min, self.log_prob_max))
+                log_policy = tf.squeeze(tf.clip_by_value(dist.log_prob(actions)[..., tf.newaxis], self.log_prob_min, self.log_prob_max))
                 # print(f'log_policy : {log_policy.shape}')
                 log_policy = tf.reduce_sum(log_policy, 1, keepdims=False)
                 # print(f'log_policy : {log_policy.shape}')
@@ -316,8 +318,8 @@ class Agent:
 
                 surr1 = tf.multiply(adv, ratio)
                 # print(f'surr1 : {surr1.shape}')
-                surr2 = tf.multiply(adv, tfp.math.clip_by_value_preserve_gradient(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon)) # ambiguous whether the preserving the gradient of ratio
-                # surr2 = tf.multiply(adv, tf.clip_by_value(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon))
+                # surr2 = tf.multiply(adv, tf.clip_by_value_preserve_gradient(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon)) # ambiguous whether the preserving the gradient of ratio
+                surr2 = tf.multiply(adv, tf.clip_by_value(ratio, clip_value_min=1-self.epsilon, clip_value_max=1+self.epsilon))
                 # print(f'surr2 : {surr2.shape}')
 
                 minimum = tf.minimum(surr1, surr2)
@@ -351,9 +353,18 @@ class Agent:
     def self_imitation_learning(self):
         if self.sil_buffer._len() < self.sil_batch_size:
             return False, 0.0, 0.0, 0.0, 0.0, 0.0
-        else:
-            self.sil_update_step += 1
 
+        self.sil_update_step += 1
+
+        # for logging
+        entropy_mem     = 0
+        actor_loss_mem  = 0
+        adv_mem         = 0
+        target_val_mem  = 0
+        current_val_mem = 0
+        critic_loss_mem = 0
+
+        for _ in range(self.sil_epoch):
             states, actions, returns, indices, weights = self.sil_buffer.sample(self.sil_batch_size)
 
             states = tf.convert_to_tensor(states, dtype=tf.float32)
@@ -366,7 +377,7 @@ class Agent:
             # print(f'actions : {actions.shape}')
 
             critic_variable = self.critic.trainable_variables
-            actor_variable  = self.actor.trainable_variables  
+            actor_variable  = self.actor.trainable_variables
             with tf.GradientTape() as tape_sil_for_critic, tf.GradientTape() as tape_sil_for_actor:
                 tape_sil_for_critic.watch(critic_variable)
                 tape_sil_for_actor.watch(actor_variable)
@@ -374,9 +385,7 @@ class Agent:
                 current_value = tf.squeeze(self.critic(states))
                 # print(f'current_value : {current_value.shape}')
 
-                advs = returns - current_value
-                # print(f'advs : {advs.shape}')
-                mask = tf.where(advs > 0.0, tf.ones_like(advs), tf.zeros_like(advs)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
+                mask = tf.where(returns - current_value > 0.0, tf.ones_like(returns), tf.zeros_like(returns)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
                 # print(f'mask : {mask.shape}')
                 num_samples = tf.reduce_sum(mask)
                 # print(f'num_samples : {num_samples.shape}')
@@ -386,11 +395,14 @@ class Agent:
                     return False, 0.0, 0.0, 0.0, 0.0, 0.0
 
                 # print('sil run')
+                advs = tf.reduce_sum(tf.stop_gradient(tf.clip_by_value(returns - current_value, 0, 1))) / num_samples
+                # print(f'advs : {advs.shape}')
+                delta = tf.stop_gradient(tf.multiply(tf.clip_by_value(current_value - returns, -1, 0), mask))
+                # print(f'delta : {delta.shape}')
 
-                sil_value_error = tf.multiply(tf.multiply(advs, weights), mask)
-                sil_huber_loss = tf.where(tf.less(sil_value_error, 1.0), 1/2 * tf.math.square(sil_value_error), 1.0 * tf.abs(sil_value_error - 1.0 * 1/2))
+                sil_value_error = tf.multiply(tf.multiply(delta, weights), current_value)
 
-                critic_loss = tf.reduce_sum(sil_huber_loss) / num_samples
+                critic_loss = tf.reduce_sum(sil_value_error) / num_samples
                 # print(f'sil_value_error : {sil_value_error.shape}')
                 # print(f'critic_loss : {critic_loss.shape}')
 
@@ -407,8 +419,7 @@ class Agent:
                 # print(f'entropy : {entropy.shape}')
 
                 log_policy = tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
-                # clipped_log_policy = tf.stop_gradient(tf.clip_by_value(log_policy, clip_value_min=self.sil_log_prob_min, clip_value_max=self.sil_log_prob_max))
-                clipped_log_policy = tfp.math.clip_by_value_preserve_gradient(log_policy, clip_value_min=self.sil_log_prob_min, clip_value_max=self.sil_log_prob_max)
+                clipped_log_policy = tf.math.add(tf.stop_gradient(tf.minimum(log_policy, self.sil_log_prob_max)), log_policy)
 
                 # print(f'log_policy : {log_policy.shape}')
                 # print(f'clipped_log_policy : {clipped_log_policy.shape}')
@@ -426,13 +437,20 @@ class Agent:
             self.sil_critic_opt.apply_gradients(zip(grads_critic, critic_variable))
             self.sil_actor_opt.apply_gradients(zip(grads_actor, actor_variable))
 
-            value_target = (tf.reduce_sum(tf.multiply(tf.multiply(weights, returns), mask)) / num_samples).numpy()
-            value_cur = (tf.reduce_sum(tf.multiply(tf.multiply(weights, current_value), mask)) / num_samples).numpy()
+            target_value = (tf.reduce_sum(tf.multiply(tf.multiply(weights, returns), mask)) / num_samples).numpy()
+            current_value = (tf.reduce_sum(tf.multiply(tf.multiply(weights, current_value), mask)) / num_samples).numpy()
 
             advantages = np.squeeze(deepcopy(tf.multiply(advs, mask)).numpy())
             self.sil_buffer.update(indices, advantages)
 
-        return True, entropy.numpy(), actor_loss_entropy.numpy(), value_target, value_cur, critic_loss.numpy()
+            entropy_mem += entropy.numpy() / self.sil_epoch
+            actor_loss_mem += actor_loss.numpy() / self.sil_epoch
+            adv_mem += advantages / self.sil_epoch
+            target_val_mem += target_value / self.sil_epoch
+            current_val_mem += current_value / self.sil_epoch
+            critic_loss_mem += critic_loss.numpy() / self.sil_epoch
+
+        return True, entropy_mem, actor_loss_mem, adv_mem, target_val_mem, critic_loss_mem, critic_loss_mem
 
     def save_xp(self, state, next_state, reward, action, log_policy, done):
         # Store transition in the replay buffer.
@@ -481,7 +499,8 @@ class Agent:
 
         for reward, done in zip(rewards[::-1], dones[::-1]):
             if self.agent_config['reward_normalize']:
-                reward = np.clip(reward, -20, 20)
+                reward = np.clip(reward, self.reward_min, self.reward_max)
+
             r = reward + gamma * r * (1. - done)
             discounted.append(r)
 

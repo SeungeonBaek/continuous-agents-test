@@ -125,7 +125,7 @@ if __name__ == '__main__':
     """
     
     env_switch = 1
-    agent_switch = 7
+    agent_switch = 9
 
     env_config, agent_config = env_agent_config(env_switch, agent_switch)
     
