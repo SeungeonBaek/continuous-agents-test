@@ -352,7 +352,7 @@ class Agent:
 
     def self_imitation_learning(self):
         if self.sil_buffer._len() < self.sil_batch_size:
-            return False, 0.0, 0.0, 0.0, 0.0, 0.0
+            return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
         self.sil_update_step += 1
 
@@ -387,15 +387,11 @@ class Agent:
 
                 mask = tf.where(returns - current_value > 0.0, tf.ones_like(returns), tf.zeros_like(returns)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
                 # print(f'mask : {mask.shape}')
-                num_samples = tf.reduce_sum(mask)
+                num_samples = tf.maximum(tf.reduce_sum(mask), 64) # Todo
                 # print(f'num_samples : {num_samples.shape}')
 
-                if (num_samples.numpy() == 0):
-                    # print('sil pass because good samples 0')
-                    return False, 0.0, 0.0, 0.0, 0.0, 0.0
-
                 # print('sil run')
-                advs = tf.reduce_sum(tf.stop_gradient(tf.clip_by_value(returns - current_value, 0, 1))) / num_samples
+                advs = tf.reduce_sum(tf.stop_gradient(tf.clip_by_value(returns - current_value, 0, 1))) / num_samples # Todo
                 # print(f'advs : {advs.shape}')
                 delta = tf.stop_gradient(tf.multiply(tf.clip_by_value(current_value - returns, -1, 0), mask))
                 # print(f'delta : {delta.shape}')
@@ -445,12 +441,12 @@ class Agent:
 
             entropy_mem += entropy.numpy() / self.sil_epoch
             actor_loss_mem += actor_loss.numpy() / self.sil_epoch
-            adv_mem += advantages / self.sil_epoch
+            adv_mem += tf.divide(tf.reduce_sum(tf.multiply(advs, mask)), num_samples).numpy() / self.sil_epoch
             target_val_mem += target_value / self.sil_epoch
             current_val_mem += current_value / self.sil_epoch
             critic_loss_mem += critic_loss.numpy() / self.sil_epoch
 
-        return True, entropy_mem, actor_loss_mem, adv_mem, target_val_mem, critic_loss_mem, critic_loss_mem
+        return True, entropy_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
 
     def save_xp(self, state, next_state, reward, action, log_policy, done):
         # Store transition in the replay buffer.
