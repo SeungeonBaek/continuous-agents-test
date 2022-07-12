@@ -27,13 +27,13 @@ TD3_gSDE_agent_config['extension'] = {'name': 'gSDE', 'latent_space': 64, 'n_ste
 
 # PPO
 PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 512, 'batch_size': 128, 'epoch_num': 3, \
-                            'entropy_coeff': 0.1, 'entropy_coeff_reduction_rate': 0.999999, 'entropy_coeff_min': 0.005, 'epsilon': 0.2, 'std_bound': [0.02, 0.3], \
+                            'entropy_coeff': 0.1, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.005, 'epsilon': 0.2, 'std_bound': [0.02, 0.2], \
                             'lr_actor': 0.001, 'lr_critic': 0.002, 'log_prob_min': -5, 'log_prob_max': 5, 'reward_normalize' : False}
 PPO_Vanilla_agent_config['extension'] = {'name': 'Vanilla', 'use_GAE': True, 'use_SIL': False}
 PPO_Vanilla_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.95}
 
 ME_PPO_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 512, 'batch_size': 128, 'epoch_num': 3, \
-                            'entropy_coeff': 0.1, 'entropy_coeff_reduction_rate': 0.999999, 'entropy_coeff_min': 0.005, 'epsilon': 0.2, 'std_bound': [0.02, 0.3], \
+                            'entropy_coeff': 0.1, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.005, 'epsilon': 0.2, 'std_bound': [0.02, 0.2], \
                             'lr_actor': 0.001, 'lr_critic': 0.002, 'log_prob_min': -5, 'log_prob_max': 5, 'reward_normalize' : False}
 ME_PPO_agent_config['extension'] = {'name': 'ME', 'use_GAE': True, 'use_ME': True}
 ME_PPO_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.95}

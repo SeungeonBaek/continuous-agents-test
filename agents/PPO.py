@@ -181,7 +181,7 @@ class Agent:
         # print(f'mu, std_ : {mu.shape}, {std_.shape}')
         # print(f'action : {action.shape}')
 
-        log_prob = tf.squeeze(tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max), axis=-1)
+        log_prob = dist.log_prob(action)
         # print(f'log_prob : {log_prob.shape}')
         log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=False)
         # print(f'log_prob : {log_prob.shape}')
@@ -400,6 +400,7 @@ class Agent:
 
                 log_policy = tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
                 clipped_log_policy = tf.stop_gradient(tf.clip_by_value(log_policy, clip_value_min=self.sil_log_prob_min, clip_value_max=self.sil_log_prob_max))
+
                 print(f'log_policy : {log_policy.shape}')
                 print(f'clipped_log_policy : {clipped_log_policy.shape}')
 
