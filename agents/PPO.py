@@ -1,3 +1,4 @@
+from collections import defaultdict
 import tensorflow as tf
 import numpy as np
 import tensorflow_probability as tfp
@@ -20,11 +21,11 @@ class Actor(Model):
     def __init__(self, obs_space, action_space):
         super(Actor,self).__init__()
         self.initializer = initializers.he_normal()
-        self.regularizer = regularizers.l2(l=0.005)
+        self.regularizer = regularizers.l2(l=0.001)
 
-        self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(512, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
-        self.l2 = Dense(128, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2_ln = LayerNormalization(axis=-1)
         self.l3 = Dense(64, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
@@ -48,11 +49,11 @@ class Critic(Model):
     def __init__(self):
         super(Critic,self).__init__()
         self.initializer = initializers.he_normal()
-        self.regularizer = regularizers.l2(l=0.005)
+        self.regularizer = regularizers.l2(l=0.001)
         
-        self.l1 = Dense(256, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(512, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
-        self.l2 = Dense(128, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2 = Dense(256, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2_ln = LayerNormalization(axis=-1)
         self.l3 = Dense(64, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
@@ -139,11 +140,11 @@ class Agent:
 
         self.actor = Actor(self.obs_space, self.act_space)
         self.actor_opt = Adam(self.actor_lr)
-        self.actor.compile(optimizer=self.actor_opt)
+        # self.actor.compile(optimizer=self.actor_opt)
         
         self.critic = Critic()
         self.critic_opt = Adam(self.critic_lr)
-        self.critic.compile(optimizer=self.critic_opt)
+        # self.critic.compile(optimizer=self.critic_opt)
 
         # extension config
         self.extension_config = self.agent_config['extension']
@@ -156,7 +157,7 @@ class Agent:
         if self.extension_config['use_SIL']:
             self.sil_config = self.extension_config['SIL_config']
 
-            self.trajectory = np.array([], [], [], [], [], dtype=np.float32)
+            self.trajectory = defaultdict(lambda:[])
             self.sil_update_step = 0
 
             self.sil_buffer = SILExperienceMemory(self.sil_config['buffer_size'], 0.6, 0.1)
@@ -165,8 +166,11 @@ class Agent:
             self.sil_log_prob_min = self.sil_config['log_prob_min']
             self.sil_log_prob_max = self.sil_config['log_prob_min']
 
-            self.sil_lr = self.sil_config['lr_sil']
-            self.sil_opt = Adam(learning_rate=self.sil_lr)
+            self.sil_lr_actor = self.sil_config['lr_sil_actor']
+            self.sil_actor_opt = Adam(learning_rate=self.sil_lr_actor)
+
+            self.sil_lr_critic = self.sil_config['lr_sil_critic']
+            self.sil_critic_opt = Adam(learning_rate=self.sil_lr_critic)
 
             self.return_criteria = self.sil_config['return_criteria']
 
@@ -181,7 +185,7 @@ class Agent:
         # print(f'mu, std_ : {mu.shape}, {std_.shape}')
         # print(f'action : {action.shape}')
 
-        log_prob = dist.log_prob(action)
+        log_prob = tf.squeeze(tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max), axis=-1)
         # print(f'log_prob : {log_prob.shape}')
         log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=False)
         # print(f'log_prob : {log_prob.shape}')
@@ -234,7 +238,8 @@ class Agent:
         raw_next_values = np.array(raw_next_values)
 
         if self.agent_config['reward_normalize']:
-            raw_rewards = (raw_rewards - raw_rewards.mean()) / (raw_rewards.std() + 1e-5)
+            # raw_rewards = (raw_rewards - raw_rewards.mean()) / (raw_rewards.std() + 1e-5)
+            raw_rewards = np.clip(raw_rewards, -20, 20)
 
         raw_advs, raw_targets = self.get_gaes(rewards=raw_rewards,
                                       dones=raw_dones,
@@ -272,8 +277,9 @@ class Agent:
 
                 td_error = tf.subtract(current_value, target_value)
                 # print(f'td_error : {td_error.shape}')
+                huber_loss = tf.where(tf.less(td_error, 1.0), 1/2 * tf.math.square(td_error), 1.0 * tf.abs(td_error - 1.0 * 1/2))
 
-                critic_loss = tf.math.reduce_mean(tf.math.square(td_error))
+                critic_loss = tf.math.reduce_mean(huber_loss)
                 # print(f'critic_loss : {critic_loss.shape}')
 
             grads_critic, _ = tf.clip_by_global_norm(tape_critic.gradient(critic_loss, critic_variable), 0.5)
@@ -294,7 +300,9 @@ class Agent:
                 actions = tf.convert_to_tensor(batch_actions, dtype=tf.float32)
                 # print(f'actions : {actions.shape}')
 
-                log_policy = tf.reduce_sum(dist.log_prob(actions), 1, keepdims=False)
+                log_policy = tf.squeeze(tfp.math.clip_by_value_preserve_gradient(dist.log_prob(actions)[..., tf.newaxis], self.log_prob_min, self.log_prob_max))
+                # print(f'log_policy : {log_policy.shape}')
+                log_policy = tf.reduce_sum(log_policy, 1, keepdims=False)
                 # print(f'log_policy : {log_policy.shape}')
 
                 old_log_policy = tf.convert_to_tensor(batch_old_log_policies, dtype=tf.float32)
@@ -352,10 +360,10 @@ class Agent:
             returns = tf.convert_to_tensor(returns, dtype=tf.float32)
             weights = tf.convert_to_tensor(weights, dtype=tf.float32)
             actions = tf.convert_to_tensor(actions, dtype=tf.float32)
-            print(f'states : {states.shape}')
-            print(f'returns : {returns.shape}')
-            print(f'weights : {weights.shape}')
-            print(f'actions : {actions.shape}')
+            # print(f'states : {states.shape}')
+            # print(f'returns : {returns.shape}')
+            # print(f'weights : {weights.shape}')
+            # print(f'actions : {actions.shape}')
 
             critic_variable = self.critic.trainable_variables
             actor_variable  = self.actor.trainable_variables  
@@ -363,59 +371,59 @@ class Agent:
                 tape_sil_for_critic.watch(critic_variable)
                 tape_sil_for_actor.watch(actor_variable)
 
-                current_value = self.critic(states)
-                print(f'current_value : {current_value.shape}')
-                current_value = tf.squeeze(current_value)
-                print(f'current_value : {current_value.shape}')
+                current_value = tf.squeeze(self.critic(states))
+                # print(f'current_value : {current_value.shape}')
 
                 advs = returns - current_value
-                print(f'advs : {advs.shape}')
+                # print(f'advs : {advs.shape}')
                 mask = tf.where(advs > 0.0, tf.ones_like(advs), tf.zeros_like(advs)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
-                print(f'mask : {mask.shape}')
+                # print(f'mask : {mask.shape}')
                 num_samples = tf.reduce_sum(mask)
-                print(f'num_samples : {num_samples.shape}')
+                # print(f'num_samples : {num_samples.shape}')
 
                 if (num_samples.numpy() == 0):
-                    print('sil pass because good samples 0')
+                    # print('sil pass because good samples 0')
                     return False, 0.0, 0.0, 0.0, 0.0, 0.0
 
-                print('sil run')
+                # print('sil run')
 
                 sil_value_error = tf.multiply(tf.multiply(advs, weights), mask)
-                critic_loss = tf.reduce_sum(tf.square(sil_value_error)) / num_samples
-                print(f'sil_value_error : {sil_value_error.shape}')
-                print(f'critic_loss : {critic_loss.shape}')
+                sil_huber_loss = tf.where(tf.less(sil_value_error, 1.0), 1/2 * tf.math.square(sil_value_error), 1.0 * tf.abs(sil_value_error - 1.0 * 1/2))
+
+                critic_loss = tf.reduce_sum(sil_huber_loss) / num_samples
+                # print(f'sil_value_error : {sil_value_error.shape}')
+                # print(f'critic_loss : {critic_loss.shape}')
 
                 mu, std = self.actor(states)
-                print(f'mu : {mu.shape}, std : {std.shape}')
+                # print(f'mu : {mu.shape}, std : {std.shape}')
 
                 dist = tfp.distributions.Normal(loc = mu, scale = tfp.math.clip_by_value_preserve_gradient(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
 
                 entropy_raw = tf.reduce_mean(dist.entropy(), 1, keepdims=False)
                 entropy_weight = tf.multiply(tf.multiply(weights, entropy_raw), mask)
                 entropy = tf.reduce_sum(entropy_weight) / num_samples # 배치별 entropy를 평균 내줌
-                print(f'entropy_raw : {entropy_raw.shape}')
-                print(f'entropy_weight : {entropy_weight.shape}')
-                print(f'entropy : {entropy.shape}')
+                # print(f'entropy_raw : {entropy_raw.shape}')
+                # print(f'entropy_weight : {entropy_weight.shape}')
+                # print(f'entropy : {entropy.shape}')
 
                 log_policy = tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
                 clipped_log_policy = tf.stop_gradient(tf.clip_by_value(log_policy, clip_value_min=self.sil_log_prob_min, clip_value_max=self.sil_log_prob_max))
 
-                print(f'log_policy : {log_policy.shape}')
-                print(f'clipped_log_policy : {clipped_log_policy.shape}')
+                # print(f'log_policy : {log_policy.shape}')
+                # print(f'clipped_log_policy : {clipped_log_policy.shape}')
 
                 actor_loss_raw = tf.multiply(tf.multiply(tf.multiply(advs, clipped_log_policy), weights), mask)
                 actor_loss = tf.reduce_sum(actor_loss_raw) / num_samples
                 actor_loss_entropy = actor_loss - self.entropy_coeff * entropy
-                print(f'actor_loss_raw : {actor_loss_raw.shape}')
-                print(f'actor_loss : {actor_loss.shape}')
-                print(f'actor_loss_entropy : {actor_loss_entropy.shape}')
+                # print(f'actor_loss_raw : {actor_loss_raw.shape}')
+                # print(f'actor_loss : {actor_loss.shape}')
+                # print(f'actor_loss_entropy : {actor_loss_entropy.shape}')
 
             grads_critic, _ = tf.clip_by_global_norm(tape_sil_for_critic.gradient(critic_loss, critic_variable), 0.5)
             grads_actor, _ = tf.clip_by_global_norm(tape_sil_for_actor.gradient(actor_loss_entropy, actor_variable), 0.5)
 
-            self.sil_opt.apply_gradients(zip(grads_critic, critic_variable))
-            self.sil_opt.apply_gradients(zip(grads_actor, actor_variable))
+            self.sil_critic_opt.apply_gradients(zip(grads_critic, critic_variable))
+            self.sil_actor_opt.apply_gradients(zip(grads_actor, actor_variable))
 
             value_target = (tf.reduce_sum(tf.multiply(tf.multiply(weights, returns), mask)) / num_samples).numpy()
             value_cur = (tf.reduce_sum(tf.multiply(tf.multiply(weights, current_value), mask)) / num_samples).numpy()
@@ -432,34 +440,34 @@ class Agent:
         # Store trajectory in the sil_replay buffer via update_buffer function
         if self.extension_config['use_SIL']:
             if done == False:
-                self.trajectory[0].append(state)
-                self.trajectory[1].append(action)
-                self.trajectory[2].append(reward)
-                self.trajectory[3].append(done)
+                self.trajectory['state'].append(state)
+                self.trajectory['action'].append(action)
+                self.trajectory['reward'].append(reward)
+                self.trajectory['done'].append(done)
 
             else:
-                self.update_buffer(self.trajectory)
+                self.update_buffer()
 
-                for idx in len(self.trajectory):
-                    self.trajectory[idx].clear()
+                for _, vals in self.trajectory.items():
+                    vals.clear()
 
 
-    def update_buffer(self, trajectory):
+    def update_buffer(self):
         better_return = False
         
-        for r in sum(trajectory[2]): # return
-            if r > self.return_criteria:
-                better_return = True
-                break
+        r = sum(self.trajectory['reward'])
+
+        if r > self.return_criteria:
+            better_return = True
         
         if better_return:
-            self.add_episode(trajectory)
+            self.add_episode()
 
-    def add_episode(self, trajectory):
-        states = trajectory[0]
-        actions = trajectory[1]
-        rewards = trajectory[2]
-        dones = trajectory[3]
+    def add_episode(self):
+        states = self.trajectory['state']
+        actions = self.trajectory['action']
+        rewards = self.trajectory['reward']
+        dones = self.trajectory['done']
 
         returns_g = self.discount_with_dones(rewards, dones, self.gamma)
         
@@ -471,6 +479,8 @@ class Agent:
         r = 0
 
         for reward, done in zip(rewards[::-1], dones[::-1]):
+            if self.agent_config['reward_normalize']:
+                reward = np.clip(reward, -20, 20)
             r = reward + gamma * r * (1. - done)
             discounted.append(r)
         

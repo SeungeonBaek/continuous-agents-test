@@ -21,6 +21,9 @@ class SILExperienceMemory:
     def _get_priority(self, error:float) -> float:
         return np.abs(error) ** self.alpha
 
+    def _len(self) -> int:
+        return self.tree.n_entries
+
     # add trajectory in prioritiy memory
     def add(self, experience: Tuple) -> None:
         state, action, return_g = experience
