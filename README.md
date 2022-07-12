@@ -4,8 +4,8 @@ This repository is for testing RL algorithm with continuous action with tensorfl
 ------------
 # Env for algorithm test
 lunar-lander continuous  
-meta-drive  
-still not slected  
+meta-drive    
+still not slected    
 
 # RL Algorithms
 ## Deterministic policy
@@ -16,13 +16,13 @@ TD3
 SDPG  (...working)  
 IDAC (gaussian policy, no alpha, no reparam)  
 IDAC (gaussian policy, alpha, no reparam)  
-IDAC (gaussian policy, no alpha, reparam => ...working)  
-IDAC (gaussian policy, alpha, reparam => ...working)  
+IDAC (gaussian policy, no alpha, reparam => maybe not working)  
+IDAC (gaussian policy, alpha, reparam => maybe not working)  
 IDAC (implicit policy, no alpha)  
 IDAC (implicit policy, alpha)  
 
 ## Stochastic policy
-PPO (...working)  
+PPO  
 SAC (...working)  
 PPG (...working)  
 
@@ -30,7 +30,7 @@ PPG (...working)
 Prioritized Experience Replay(PER)   
 Emphasizing Recent Experience replay(ERE, ...working)   
 
-Self-Imitation Learning (...working)   
+Self-Imitation Learning   
 Model ensemble PPO (...working)   
 gSDE(for DDPG, TD3, SAC, PPO) (...refactoring)   
 TQC(for DDPG, TD3, SAC, PPO) (...working)   

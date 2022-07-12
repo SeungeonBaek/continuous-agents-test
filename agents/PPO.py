@@ -407,7 +407,8 @@ class Agent:
                 # print(f'entropy : {entropy.shape}')
 
                 log_policy = tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
-                clipped_log_policy = tf.stop_gradient(tf.clip_by_value(log_policy, clip_value_min=self.sil_log_prob_min, clip_value_max=self.sil_log_prob_max))
+                # clipped_log_policy = tf.stop_gradient(tf.clip_by_value(log_policy, clip_value_min=self.sil_log_prob_min, clip_value_max=self.sil_log_prob_max))
+                clipped_log_policy = tfp.math.clip_by_value_preserve_gradient(log_policy, clip_value_min=self.sil_log_prob_min, clip_value_max=self.sil_log_prob_max)
 
                 # print(f'log_policy : {log_policy.shape}')
                 # print(f'clipped_log_policy : {clipped_log_policy.shape}')
@@ -483,8 +484,15 @@ class Agent:
                 reward = np.clip(reward, -20, 20)
             r = reward + gamma * r * (1. - done)
             discounted.append(r)
-        
-        return discounted[::-1]
+
+        discounted = np.array(discounted, dtype=np.float32)
+
+        if discounted.std() >= 0:
+            discounted_norm = (discounted - discounted.mean()) / (discounted.std() + 1e-8)
+        else:
+            discounted_norm = (discounted - discounted.mean()) / (discounted.std() - 1e-8)        
+
+        return discounted_norm[::-1]
 
     def load_models(self, path):
         print('Load Model Path : ', path)
