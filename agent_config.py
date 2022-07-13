@@ -26,12 +26,12 @@ TD3_gSDE_agent_config = {'agent_name': 'TD3', 'gamma' : 0.99, 'tau': 0.005, 'upd
 TD3_gSDE_agent_config['extension'] = {'name': 'gSDE', 'latent_space': 64, 'n_step_reset': 16}
 
 # PPO
-PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 512, 'epoch_num': 12, \
-                            'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.0001, \
-                            'epsilon': 0.2, 'std_bound': [0.02, 0.2], 'lr_actor': 0.00075, 'lr_critic': 0.0015, 'reward_normalize' : True, \
-                            'reward_min': -50, 'reward_max': 150, 'log_prob_min': -1.0, 'log_prob_max': 2.0}
+PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 512, 'epoch_num': 10, \
+                            'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.0005, \
+                            'epsilon': 0.2, 'std_bound': [0.02, 0.2], 'lr_actor': 0.00025, 'lr_critic': 0.0005, 'reward_normalize' : True, \
+                            'reward_min': -25, 'reward_max': 25, 'log_prob_min': -1.0, 'log_prob_max': 2.0}
 PPO_Vanilla_agent_config['extension'] = {'name': 'Vanilla', 'use_GAE': True, 'use_SIL': False}
-PPO_Vanilla_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.95}
+PPO_Vanilla_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.92}
 
 ME_PPO_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 512, 'batch_size': 128, 'epoch_num': 4, \
                             'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.0005, \
@@ -41,10 +41,10 @@ ME_PPO_agent_config['extension'] = {'name': 'ME', 'use_GAE': True, 'use_ME': Tru
 ME_PPO_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.95}
 ME_PPO_agent_config['extension']['ME_config'] = {}
 
-PPO_SIL_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 512, 'epoch_num': 12, \
+PPO_SIL_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 512, 'epoch_num': 10, \
                             'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.0005, \
-                            'epsilon': 0.2, 'std_bound': [0.02, 0.2], 'lr_actor': 0.00075, 'lr_critic': 0.0015, 'reward_normalize' : True, \
-                            'reward_min': -50, 'reward_max': 150, 'log_prob_min': -1.0, 'log_prob_max': 2.0}
+                            'epsilon': 0.2, 'std_bound': [0.02, 0.3], 'lr_actor': 0.00005, 'lr_critic': 0.0015, 'reward_normalize' : True, \
+                            'reward_min': -15, 'reward_max': 15, 'log_prob_min': -1.0, 'log_prob_max': 2.0}
 PPO_SIL_agent_config['extension'] = {'name': 'SIL', 'use_GAE': True, 'use_SIL': True}
 PPO_SIL_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.95}
 PPO_SIL_agent_config['extension']['SIL_config'] = {'buffer_size': 1000000, 'batch_size': 512, 'lr_sil_actor': 0.0005, 'epoch_num': 4, 

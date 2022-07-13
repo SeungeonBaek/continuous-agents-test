@@ -17,7 +17,7 @@ class Actor(Model):
     def __init__(self, action_space):
         super(Actor,self).__init__()
         self.initializer = initializers.he_normal()
-        self.regularizer = regularizers.l2(l=0.005)
+        self.regularizer = regularizers.l2(l=0.001)
         
         self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
@@ -28,6 +28,7 @@ class Actor(Model):
         self.l4 = Dense(32, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l4_ln = LayerNormalization(axis=-1)
         self.mu = Dense(action_space, activation='tanh')
+        self.log_std = Dense(action_space, activation = None)
 
     def call(self, state):
         l1 = self.l1_ln(self.l1(state))
@@ -35,14 +36,15 @@ class Actor(Model):
         l3 = self.l3_ln(self.l3(l2))
         l4 = self.l4_ln(self.l4(l3))
         mu = self.mu(l4)
+        log_std = self.log_std(l4)
 
-        return mu
+        return mu, log_std
 
-class Critic(Model):
+class StateValue(Model):
     def __init__(self):
-        super(Critic,self).__init__()
+        super(StateValue,self).__init__()
         self.initializer = initializers.he_normal()
-        self.regularizer = regularizers.l2(l=0.005)
+        self.regularizer = regularizers.l2(l=0.001)
 
         self.l1 = Dense(256, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
@@ -52,7 +54,33 @@ class Critic(Model):
         self.l3_ln = LayerNormalization(axis=-1)
         self.l4 = Dense(32, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l4_ln = LayerNormalization(axis=-1)
-        self.value = tf.keras.layers.Dense(1, activation = None)
+        self.value = Dense(1, activation = None)
+
+    def call(self, state):
+        l1 = self.l1_ln(self.l1(state))
+        l2 = self.l2_ln(self.l2(l1))
+        l3 = self.l3_ln(self.l3(l2))
+        l4 = self.l4_ln(self.l4(l3))
+        value = self.value(l4)
+
+        return value
+
+
+class SoftQValue(Model):
+    def __init__(self):
+        super(SoftQValue,self).__init__()
+        self.initializer = initializers.he_normal()
+        self.regularizer = regularizers.l2(l=0.001)
+
+        self.l1 = Dense(256, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1_ln = LayerNormalization(axis=-1)
+        self.l2 = Dense(128, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2_ln = LayerNormalization(axis=-1)
+        self.l3 = Dense(64, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l3_ln = LayerNormalization(axis=-1)
+        self.l4 = Dense(32, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l4_ln = LayerNormalization(axis=-1)
+        self.value = Dense(1, activation = None)
 
     def call(self, state_action):
         l1 = self.l1_ln(self.l1(state_action))
@@ -62,6 +90,7 @@ class Critic(Model):
         value = self.value(l4)
 
         return value
+
 
 class Agent:
     """
@@ -81,8 +110,12 @@ class Agent:
  
         self.gamma = self.agent_config['gamma']
         self.tau = self.agent_config['tau']
+
         self.update_freq = self.agent_config['update_freq']
-        self.actor_update_freq = self.agent_config['actor_update_freq'] # k번 critic update당 1번 policy update
+        self.actor_update_freq = self.agent_config['actor_update_freq'] # k번 critic update당 1번 policy update       
+        
+        self.update_step = 0
+        self.critic_update_step = 0
 
         if self.agent_config['use_PER']:
             self.replay_buffer = PrioritizedMemory(self.agent_config['buffer_size'])
@@ -90,57 +123,60 @@ class Agent:
             self.replay_buffer = ExperienceMemory(self.agent_config['buffer_size'])
         self.batch_size = self.agent_config['batch_size']
 
-        self.std = self.agent_config['gaussian_std']
-        self.noise_clip = self.agent_config['noise_clip']
-        self.reduce_rate = self.agent_config['noise_reduce_rate']
-        self.gradient_steps = 0
-        self.critic_steps = 0
         self.warm_up = self.agent_config['warm_up']
+        self.std_bound = self.agent_config['std_bound']
 
         self.actor_lr_main = self.agent_config['lr_actor']
-        self.critic_lr_main = self.agent_config['lr_critic']
+        self.soft_q_lr_main = self.agent_config['lr_soft_q']
+        self.state_value_lr_main = self.agent_config['lr_state_value']
 
-        self.actor_main, self.actor_target = Actor(self.act_space), Actor(self.act_space)
-        self.actor_target.set_weights(self.actor_main.get_weights())
+        self.actor_main = Actor(self.act_space)
         self.actor_opt_main = Adam(self.actor_lr_main)
-        self.actor_main.compile(optimizer=self.actor_opt_main)
         
-        self.critic_main_1, self.critic_main_2 = Critic(), Critic()
-        self.critic_target_1, self.critic_target_2 = Critic(), Critic()
-        self.critic_target_1.set_weights(self.critic_main_1.get_weights())
-        self.critic_target_2.set_weights(self.critic_main_2.get_weights())
-        self.critic_opt_main_1 = Adam(self.critic_lr_main)
-        self.critic_opt_main_2 = Adam(self.critic_lr_main)
-        self.critic_main_1.compile(optimizer=self.critic_opt_main_1)
-        self.critic_main_2.compile(optimizer=self.critic_opt_main_2)
+        self.soft_q_main_1, self.soft_q_main_2 = SoftQValue(), SoftQValue()
+        self.soft_q_target_1, self.soft_q_target_2 = SoftQValue(), SoftQValue()
+        self.soft_q_target_1.set_weights(self.soft_q_main_1.get_weights())
+        self.soft_q_target_2.set_weights(self.soft_q_main_2.get_weights())
+        self.soft_q_opt_main_1 = Adam(self.soft_q_lr_main)
+        self.soft_q_opt_main_2 = Adam(self.soft_q_lr_main)
+
+        self.state_value_main = StateValue()
+        self.state_value_opt_main = Adam(self.state_value_lr_main)
+
+        # extension config
+        self.extension_config = self.agent_config['extension']
+
+        if self.extension_config['use_automatic_entropy_tuning']:
+            if self.extension_config['automatic_alpha_config']['use_target_entropy']:
+                self.target_entropy = self.extension_config['automatic_alpha_config']['target_entropy']
+            else:
+                self.target_entropy = -np.prod(self.act_space).item()
+            self.log_alpha = tf.Variable(0, trainable=True, dtype=tf.float32)
+            self.alpha_optimizer = Adam(self.actor_lr_main)
+        else:
+            self.alpha = self.agent_config['alpha']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
         # print('in action, obs: ', np.shape(np.array(obs)), obs)
-        mu = self.actor_main(obs)
+        mu, log_std = self.actor_main(obs)
         # print('in action, mu: ', np.shape(np.array(mu)), mu)
 
-        if self.gradient_steps > self.warm_up:
-            std = tf.convert_to_tensor([self.std]*self.act_space, dtype=tf.float32)
-            dist = tfp.distributions.Normal(loc=mu, scale=std)
-            action = tf.squeeze(dist.sample())
-            action = action.numpy()
-            self.std = self.std * self.reduce_rate
+        std = tf.exp(tf.clip_by_value(log_std, -20, 2))
+        dist = tfp.distributions.Normal(loc=mu, scale=std)
+        action = tf.squeeze(dist.sample())
+
+        if self.update_step > self.warm_up:
+            squashed_action = tf.tanh(action).numpy()[0]
         else:
-            action = mu.numpy()[0]
+            squashed_action = tf.tanh(mu).numpy()[0]
 
-        action = np.clip(np.clip(action, mu.numpy()[0] - self.noise_clip, mu.numpy()[0] + self.noise_clip), -1, 1)
+        log_prob = dist.log_prob(action) - tf.math.log(1.0 - tf.pow(squashed_action, 2) + 1e-8)
+        logprob = tf.reduce_sum(logprob, axis=-1, keepdims=True)
 
-        return action
+        return squashed_action, log_prob
 
     def update_target(self):
-        actor_weights = []
-        actor_targets = self.actor_target.weights
-        
-        for idx, weight in enumerate(self.actor_main.weights):
-            actor_weights.append(weight * self.tau + actor_targets[idx] * (1 - self.tau))
-        self.actor_target.set_weights(actor_weights)
-        
         critic_weithgs_1 = []
         critic_targets_1 = self.critic_target_1.weights
         
@@ -158,13 +194,13 @@ class Agent:
     def update(self):
         if self.replay_buffer._len() < self.batch_size:
             return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-        if not self.gradient_steps % self.update_freq == 0:  # only update every update_freq
-            self.gradient_steps += 1
+        if not self.update_step % self.update_freq == 0:  # only update every update_freq
+            self.update_step += 1
             return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
         updated = True
-        self.gradient_steps += 1
-        self.critic_steps += 1
+        self.update_step += 1
+        self.critic_update_step += 1
 
         actor_loss_val, criitic_loss1_val, ciritic_loss2_val = 0.0, 0.0, 0.0
         target_q_val, current_q_1_val, current_q_2_val = 0.0, 0.0, 0.0
@@ -253,7 +289,7 @@ class Agent:
         current_q_1_val = tf.math.reduce_mean(current_q_1).numpy()
         current_q_2_val = tf.math.reduce_mean(current_q_2).numpy()
 
-        if self.critic_steps % self.actor_update_freq == 0:
+        if self.critic_update_step % self.actor_update_freq == 0:
 
             actor_variable = self.actor_main.trainable_variables
             with tf.GradientTape() as tape_actor:

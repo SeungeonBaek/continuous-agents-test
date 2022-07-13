@@ -75,8 +75,9 @@ class Agent:
             agent_config:
                 {
                     name, gamma, total_batch_size, batch_size, epoch_num,
-                    entropy_coeff, entropy_coeff_reduction_rate, entropy_coeff_min, epsilon, std_bound,
-                    lr_actor, lr_critic, log_prob_min, log_prob_max, reward_normalize,
+                    entropy_coeff, entropy_coeff_reduction_rate, entropy_coeff_min,
+                    epsilon, std_bound, lr_actor, lr_critic, reward_normalize,
+                    reward_min, reward_max, log_prob_min, log_prob_max
 
                     extension = {
                         'use_GAE, 'use_SIL,
@@ -364,87 +365,86 @@ class Agent:
         current_val_mem = 0
         critic_loss_mem = 0
 
-        for _ in range(self.sil_epoch):
-            states, actions, returns, indices, weights = self.sil_buffer.sample(self.sil_batch_size)
+        states, actions, returns, indices, weights = self.sil_buffer.sample(self.sil_batch_size)
 
-            states = tf.convert_to_tensor(states, dtype=tf.float32)
-            returns = tf.convert_to_tensor(returns, dtype=tf.float32)
-            weights = tf.convert_to_tensor(weights, dtype=tf.float32)
-            actions = tf.convert_to_tensor(actions, dtype=tf.float32)
-            # print(f'states : {states.shape}')
-            # print(f'returns : {returns.shape}')
-            # print(f'weights : {weights.shape}')
-            # print(f'actions : {actions.shape}')
+        states = tf.convert_to_tensor(states, dtype=tf.float32)
+        returns = tf.convert_to_tensor(returns, dtype=tf.float32)
+        weights = tf.convert_to_tensor(weights, dtype=tf.float32)
+        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+        # print(f'states : {states.shape}')
+        # print(f'returns : {returns.shape}')
+        # print(f'weights : {weights.shape}')
+        # print(f'actions : {actions.shape}')
 
-            critic_variable = self.critic.trainable_variables
-            actor_variable  = self.actor.trainable_variables
-            with tf.GradientTape() as tape_sil_for_critic, tf.GradientTape() as tape_sil_for_actor:
-                tape_sil_for_critic.watch(critic_variable)
-                tape_sil_for_actor.watch(actor_variable)
+        critic_variable = self.critic.trainable_variables
+        actor_variable  = self.actor.trainable_variables
+        with tf.GradientTape() as tape_sil_for_critic, tf.GradientTape() as tape_sil_for_actor:
+            tape_sil_for_critic.watch(critic_variable)
+            tape_sil_for_actor.watch(actor_variable)
 
-                current_value = tf.squeeze(self.critic(states))
-                # print(f'current_value : {current_value.shape}')
+            current_value = tf.squeeze(self.critic(states))
+            # print(f'current_value : {current_value.shape}')
 
-                mask = tf.where(returns - current_value > 0.0, tf.ones_like(returns), tf.zeros_like(returns)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
-                # print(f'mask : {mask.shape}')
-                num_samples = tf.maximum(tf.reduce_sum(mask), 64) # Todo
-                # print(f'num_samples : {num_samples.shape}')
+            mask = tf.where(returns - current_value > 0.0, tf.ones_like(returns), tf.zeros_like(returns)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
+            # print(f'mask : {mask.shape}')
+            num_samples = tf.maximum(tf.reduce_sum(mask), 64) # Todo
+            # print(f'num_samples : {num_samples.shape}')
 
-                # print('sil run')
-                advs = tf.reduce_sum(tf.stop_gradient(tf.clip_by_value(returns - current_value, 0, 1))) / num_samples # Todo
-                # print(f'advs : {advs.shape}')
-                delta = tf.stop_gradient(tf.multiply(tf.clip_by_value(current_value - returns, -1, 0), mask))
-                # print(f'delta : {delta.shape}')
+            # print('sil run')
+            advs = tf.reduce_sum(tf.stop_gradient(tf.clip_by_value(returns - current_value, 0, 1))) / num_samples # Todo
+            # print(f'advs : {advs.shape}')
+            delta = tf.stop_gradient(tf.multiply(tf.clip_by_value(current_value - returns, -1, 0), mask))
+            # print(f'delta : {delta.shape}')
 
-                sil_value_error = tf.multiply(tf.multiply(delta, weights), current_value)
+            sil_value_error = tf.multiply(tf.multiply(delta, weights), current_value)
 
-                critic_loss = tf.reduce_sum(sil_value_error) / num_samples
-                # print(f'sil_value_error : {sil_value_error.shape}')
-                # print(f'critic_loss : {critic_loss.shape}')
+            critic_loss = tf.reduce_sum(sil_value_error) / num_samples
+            # print(f'sil_value_error : {sil_value_error.shape}')
+            # print(f'critic_loss : {critic_loss.shape}')
 
-                mu, std = self.actor(states)
-                # print(f'mu : {mu.shape}, std : {std.shape}')
+            mu, std = self.actor(states)
+            # print(f'mu : {mu.shape}, std : {std.shape}')
 
-                dist = tfp.distributions.Normal(loc = mu, scale = tfp.math.clip_by_value_preserve_gradient(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
+            dist = tfp.distributions.Normal(loc = mu, scale = tfp.math.clip_by_value_preserve_gradient(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
 
-                entropy_raw = tf.reduce_mean(dist.entropy(), 1, keepdims=False)
-                entropy_weight = tf.multiply(tf.multiply(weights, entropy_raw), mask)
-                entropy = tf.reduce_sum(entropy_weight) / num_samples # 배치별 entropy를 평균 내줌
-                # print(f'entropy_raw : {entropy_raw.shape}')
-                # print(f'entropy_weight : {entropy_weight.shape}')
-                # print(f'entropy : {entropy.shape}')
+            entropy_raw = tf.reduce_mean(dist.entropy(), 1, keepdims=False)
+            entropy_weight = tf.multiply(tf.multiply(weights, entropy_raw), mask)
+            entropy = tf.reduce_sum(entropy_weight) / num_samples # 배치별 entropy를 평균 내줌
+            # print(f'entropy_raw : {entropy_raw.shape}')
+            # print(f'entropy_weight : {entropy_weight.shape}')
+            # print(f'entropy : {entropy.shape}')
 
-                log_policy = tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
-                clipped_log_policy = tf.math.add(tf.stop_gradient(tf.minimum(log_policy, self.sil_log_prob_max)), log_policy)
+            log_policy = tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
+            clipped_log_policy = tf.math.add(tf.stop_gradient(tf.minimum(log_policy, self.sil_log_prob_max)), log_policy)
 
-                # print(f'log_policy : {log_policy.shape}')
-                # print(f'clipped_log_policy : {clipped_log_policy.shape}')
+            # print(f'log_policy : {log_policy.shape}')
+            # print(f'clipped_log_policy : {clipped_log_policy.shape}')
 
-                actor_loss_raw = tf.multiply(tf.multiply(tf.multiply(advs, clipped_log_policy), weights), mask)
-                actor_loss = tf.reduce_sum(actor_loss_raw) / num_samples
-                actor_loss_entropy = actor_loss - self.entropy_coeff * entropy
-                # print(f'actor_loss_raw : {actor_loss_raw.shape}')
-                # print(f'actor_loss : {actor_loss.shape}')
-                # print(f'actor_loss_entropy : {actor_loss_entropy.shape}')
+            actor_loss_raw = tf.multiply(tf.multiply(tf.multiply(advs, clipped_log_policy), weights), mask)
+            actor_loss = tf.reduce_sum(actor_loss_raw) / num_samples
+            actor_loss_entropy = actor_loss - self.entropy_coeff * entropy
+            # print(f'actor_loss_raw : {actor_loss_raw.shape}')
+            # print(f'actor_loss : {actor_loss.shape}')
+            # print(f'actor_loss_entropy : {actor_loss_entropy.shape}')
 
-            grads_critic, _ = tf.clip_by_global_norm(tape_sil_for_critic.gradient(critic_loss, critic_variable), 0.5)
-            grads_actor, _ = tf.clip_by_global_norm(tape_sil_for_actor.gradient(actor_loss_entropy, actor_variable), 0.5)
+        grads_critic, _ = tf.clip_by_global_norm(tape_sil_for_critic.gradient(critic_loss, critic_variable), 0.5)
+        grads_actor, _ = tf.clip_by_global_norm(tape_sil_for_actor.gradient(actor_loss_entropy, actor_variable), 0.5)
 
-            self.sil_critic_opt.apply_gradients(zip(grads_critic, critic_variable))
-            self.sil_actor_opt.apply_gradients(zip(grads_actor, actor_variable))
+        self.sil_critic_opt.apply_gradients(zip(grads_critic, critic_variable))
+        self.sil_actor_opt.apply_gradients(zip(grads_actor, actor_variable))
 
-            target_value = (tf.reduce_sum(tf.multiply(tf.multiply(weights, returns), mask)) / num_samples).numpy()
-            current_value = (tf.reduce_sum(tf.multiply(tf.multiply(weights, current_value), mask)) / num_samples).numpy()
+        target_value = (tf.reduce_sum(tf.multiply(tf.multiply(weights, returns), mask)) / num_samples).numpy()
+        current_value = (tf.reduce_sum(tf.multiply(tf.multiply(weights, current_value), mask)) / num_samples).numpy()
 
-            advantages = np.squeeze(deepcopy(tf.multiply(advs, mask)).numpy())
-            self.sil_buffer.update(indices, advantages)
+        advantages = np.squeeze(deepcopy(tf.multiply(advs, mask)).numpy())
+        self.sil_buffer.update(indices, advantages)
 
-            entropy_mem += entropy.numpy() / self.sil_epoch
-            actor_loss_mem += actor_loss.numpy() / self.sil_epoch
-            adv_mem += tf.divide(tf.reduce_sum(tf.multiply(advs, mask)), num_samples).numpy() / self.sil_epoch
-            target_val_mem += target_value / self.sil_epoch
-            current_val_mem += current_value / self.sil_epoch
-            critic_loss_mem += critic_loss.numpy() / self.sil_epoch
+        entropy_mem += entropy.numpy()
+        actor_loss_mem += actor_loss.numpy()
+        adv_mem += tf.divide(tf.reduce_sum(tf.multiply(advs, mask)), num_samples).numpy()
+        target_val_mem += target_value
+        current_val_mem += current_value
+        critic_loss_mem += critic_loss.numpy()
 
         return True, entropy_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
 
