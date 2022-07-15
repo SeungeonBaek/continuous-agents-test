@@ -26,12 +26,12 @@ TD3_gSDE_agent_config = {'agent_name': 'TD3', 'gamma' : 0.99, 'tau': 0.005, 'upd
 TD3_gSDE_agent_config['extension'] = {'name': 'gSDE', 'latent_space': 64, 'n_step_reset': 16}
 
 # PPO
-PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 512, 'epoch_num': 20, \
+PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 1024, 'epoch_num': 40, \
                             'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9998, 'entropy_coeff_min': 0.001, \
                             'epsilon': 0.2, 'std_bound': [0.025, 0.25], 'lr_actor': 0.0002, 'lr_critic': 0.0004, 'reward_normalize' : True, \
                             'reward_min': -5, 'reward_max': 5, 'log_prob_min': -1.0, 'log_prob_max': 2.0}
 PPO_Vanilla_agent_config['extension'] = {'name': 'Vanilla', 'use_GAE': True, 'use_SIL': False}
-PPO_Vanilla_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.93}
+PPO_Vanilla_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.97}
 
 ME_PPO_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 512, 'batch_size': 128, 'epoch_num': 4, \
                             'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.0005, \

@@ -77,13 +77,13 @@ class Agent:
                     reward_min, reward_max, log_prob_min, log_prob_max
 
                     extension = {
-                        'use_GAE, 'use_SIL,
+                        name, use_GAE, use_SIL,
 
                         GAE_config = {
                             use_gae_norm, lambda
                         },
                         SIL_config = {
-                            buffer_size, batch_size, lr_sil, return_criteria, log_prob_min, log_prob_max
+                            buffer_size, batch_size, lr_sil, return_criteria, epoch_num, log_prob_min, log_prob_max
                         }
                     }
                 }
