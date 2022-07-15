@@ -115,7 +115,6 @@ class Agent:
         self.actor_update_freq = self.agent_config['actor_update_freq'] # k번 critic update당 1번 policy update       
         
         self.update_step = 0
-        self.critic_update_step = 0
 
         if self.agent_config['use_PER']:
             self.replay_buffer = PrioritizedMemory(self.agent_config['buffer_size'])
@@ -177,19 +176,19 @@ class Agent:
         return squashed_action, log_prob
 
     def update_target(self):
-        critic_weithgs_1 = []
-        critic_targets_1 = self.critic_target_1.weights
+        soft_q_weights_1 = []
+        soft_q_targets_1 = self.soft_q_target_1.weights
         
-        for idx, weight in enumerate(self.critic_main_1.weights):
-            critic_weithgs_1.append(weight * self.tau + critic_targets_1[idx] * (1 - self.tau))
-        self.critic_target_1.set_weights(critic_weithgs_1)
+        for idx, weight in enumerate(self.soft_q_main_1.weights):
+            soft_q_weights_1.append(weight * self.tau + soft_q_targets_1[idx] * (1 - self.tau))
+        self.soft_q_target_1.set_weights(soft_q_weights_1)
 
-        critic_weithgs_2 = []
-        critic_targets_2 = self.critic_target_2.weights
+        soft_q__weithgs_2 = []
+        soft_q_targets_2 = self.soft_q_target_2.weights
         
-        for idx, weight in enumerate(self.critic_main_2.weights):
-            critic_weithgs_2.append(weight * self.tau + critic_targets_2[idx] * (1 - self.tau))
-        self.critic_target_2.set_weights(critic_weithgs_2)
+        for idx, weight in enumerate(self.soft_q_main_2.weights):
+            soft_q__weithgs_2.append(weight * self.tau + soft_q_targets_2[idx] * (1 - self.tau))
+        self.soft_q_target_2.set_weights(soft_q__weithgs_2)
 
     def update(self):
         if self.replay_buffer._len() < self.batch_size:
@@ -200,9 +199,8 @@ class Agent:
 
         updated = True
         self.update_step += 1
-        self.critic_update_step += 1
 
-        actor_loss_val, criitic_loss1_val, ciritic_loss2_val = 0.0, 0.0, 0.0
+        actor_loss_val, soft_q_loss_1_val, soft_q_loss_2_val = 0.0, 0.0, 0.0
         target_q_val, current_q_1_val, current_q_2_val = 0.0, 0.0, 0.0
 
         if self.agent_config['use_PER']:
@@ -238,16 +236,16 @@ class Agent:
             actions = tf.convert_to_tensor(actions, dtype = tf.float32)
             dones = tf.convert_to_tensor(dones, dtype = tf.bool)
 
-        critic1_variable = self.critic_main_1.trainable_variables
-        critic2_variable = self.critic_main_2.trainable_variables
-        with tf.GradientTape() as tape_critic_1, tf.GradientTape() as tape_critic_2:
-            tape_critic_1.watch(critic1_variable)
-            tape_critic_2.watch(critic2_variable)
+        soft_q_1_variable = self.soft_q_main_1.trainable_variables
+        soft_q_2_variable = self.soft_q_main_2.trainable_variables
+        with tf.GradientTape() as tape_soft_q_1, tf.GradientTape() as tape_soft_q_2:
+            tape_soft_q_1.watch(soft_q_1_variable)
+            tape_soft_q_2.watch(soft_q_2_variable)
             target_action = self.actor_target(next_states)
             # print('target_action : {}'.format(target_action.numpy().shape), target_action)
 
-            target_q_next_1 = tf.squeeze(self.critic_target_1(tf.concat([next_states,target_action], 1)), 1)
-            target_q_next_2 = tf.squeeze(self.critic_target_2(tf.concat([next_states,target_action], 1)), 1)
+            target_q_next_1 = tf.squeeze(self.soft_q_target_1(tf.concat([next_states,target_action], 1)), 1)
+            target_q_next_2 = tf.squeeze(self.soft_q_target_2(tf.concat([next_states,target_action], 1)), 1)
             target_q_next = tf.math.minimum(target_q_next_1, target_q_next_2)
             # print('target_q_next_1 : {}'.format(target_q_next_1.numpy().shape), target_q_next_1)
             # print('target_q_next_2 : {}'.format(target_q_next_2.numpy().shape), target_q_next_2)
@@ -256,8 +254,8 @@ class Agent:
             target_q = tf.add(rewards, tf.multiply(self.gamma, tf.multiply(target_q_next, tf.subtract(1.0, tf.cast(dones, dtype=tf.float32)))))
             # print('target_q : {}'.format(target_q.numpy().shape), target_q)
 
-            current_q_1 = tf.squeeze(self.critic_main_1(tf.concat([states,actions], 1)), 1)
-            current_q_2 = tf.squeeze(self.critic_main_2(tf.concat([states,actions], 1)), 1)
+            current_q_1 = tf.squeeze(self.soft_q_main_1(tf.concat([states,actions], 1)), 1)
+            current_q_2 = tf.squeeze(self.soft_q_main_2(tf.concat([states,actions], 1)), 1)
             # print('current_q_1 : {}'.format(current_q_1.numpy().shape), current_q_1)
             # print('current_q_2 : {}'.format(current_q_2.numpy().shape), current_q_2)
 
@@ -277,36 +275,34 @@ class Agent:
             td_error = tf.math.reduce_mean(td_errors)
             # print('td_error : {}'.format(td_error.numpy().shape), td_error)
             
-        grads_critic_1, _ = tf.clip_by_global_norm(tape_critic_1.gradient(td_error, critic1_variable), 0.5)
-        grads_critic_2, _ = tf.clip_by_global_norm(tape_critic_2.gradient(td_error, critic2_variable), 0.5)
+        grads_soft_q_1, _ = tf.clip_by_global_norm(tape_soft_q_1.gradient(td_error, soft_q_1_variable), 0.5)
+        grads_soft_q_2, _ = tf.clip_by_global_norm(tape_soft_q_2.gradient(td_error, soft_q_2_variable), 0.5)
 
-        self.critic_opt_main_1.apply_gradients(zip(grads_critic_1, critic1_variable))
-        self.critic_opt_main_2.apply_gradients(zip(grads_critic_2, critic2_variable))
+        self.soft_q_opt_main_1.apply_gradients(zip(grads_soft_q_1, soft_q_1_variable))
+        self.soft_q_opt_main_2.apply_gradients(zip(grads_soft_q_2, soft_q_2_variable))
 
-        criitic_loss1_val = tf.math.reduce_mean(critic_loss_1).numpy()
-        ciritic_loss2_val = tf.math.reduce_mean(critic_loss_2).numpy()
+        soft_q_loss_1_val = tf.math.reduce_mean(critic_loss_1).numpy()
+        soft_q_loss_2_val = tf.math.reduce_mean(critic_loss_2).numpy()
         target_q_val  = tf.math.reduce_mean(target_q).numpy()
         current_q_1_val = tf.math.reduce_mean(current_q_1).numpy()
         current_q_2_val = tf.math.reduce_mean(current_q_2).numpy()
 
-        if self.critic_update_step % self.actor_update_freq == 0:
+        actor_variable = self.actor_main.trainable_variables
+        with tf.GradientTape() as tape_actor:
+            tape_actor.watch(actor_variable)
 
-            actor_variable = self.actor_main.trainable_variables
-            with tf.GradientTape() as tape_actor:
-                tape_actor.watch(actor_variable)
+            new_policy_actions = self.actor_main(states)
+            # print('new_policy_actions : {}'.format(new_policy_actions.numpy().shape))
+            actor_loss = -self.soft_q_main_1(tf.concat([states, new_policy_actions],1))
+            # print('actor_loss : {}'.format(actor_loss.numpy().shape))
+            actor_loss = tf.math.reduce_mean(actor_loss)
+            # print('actor_loss : {}'.format(actor_loss.numpy().shape))
 
-                new_policy_actions = self.actor_main(states)
-                # print('new_policy_actions : {}'.format(new_policy_actions.numpy().shape))
-                actor_loss = -self.critic_main_1(tf.concat([states, new_policy_actions],1))
-                # print('actor_loss : {}'.format(actor_loss.numpy().shape))
-                actor_loss = tf.math.reduce_mean(actor_loss)
-                # print('actor_loss : {}'.format(actor_loss.numpy().shape))
+        grads_actor, _ = tf.clip_by_global_norm(tape_actor.gradient(actor_loss, actor_variable), 0.5)
+        # grads_actor = tape_actor.gradient(actor_loss, self.actor_main.trainable_variables)        
+        self.actor_opt_main.apply_gradients(zip(grads_actor, actor_variable))
 
-            grads_actor, _ = tf.clip_by_global_norm(tape_actor.gradient(actor_loss, actor_variable), 0.5)
-            # grads_actor = tape_actor.gradient(actor_loss, self.actor_main.trainable_variables)        
-            self.actor_opt_main.apply_gradients(zip(grads_actor, actor_variable))
-
-            actor_loss_val = actor_loss.numpy()
+        actor_loss_val = actor_loss.numpy()
 
         self.update_target()
 
@@ -314,7 +310,7 @@ class Agent:
             for i in range(self.batch_size):
                 self.replay_buffer.update(idxs[i], td_errors[i].numpy())
 
-        return updated, actor_loss_val, criitic_loss1_val, ciritic_loss2_val, target_q_val, current_q_1_val, current_q_2_val
+        return updated, actor_loss_val, soft_q_loss_1_val, soft_q_loss_2_val, target_q_val, current_q_1_val, current_q_2_val
 
     def save_xp(self, state, next_state, reward, action, done):
         # Store transition in the replay buffer.
@@ -328,15 +324,15 @@ class Agent:
             # print('next_state_tf: {}'.format(next_state_tf))
             # print('target_action_tf: {}'.format(target_action_tf))
 
-            target_q_next_1 = tf.squeeze(self.critic_target_1(tf.concat([next_state_tf,target_action_tf], 1)), 1)
-            target_q_next_2 = tf.squeeze(self.critic_target_2(tf.concat([next_state_tf,target_action_tf], 1)), 1)
+            target_q_next_1 = tf.squeeze(self.soft_q_target_1(tf.concat([next_state_tf,target_action_tf], 1)), 1)
+            target_q_next_2 = tf.squeeze(self.soft_q_target_2(tf.concat([next_state_tf,target_action_tf], 1)), 1)
             target_q_next = tf.math.minimum(target_q_next_1, target_q_next_2)
             # print('target_q_next_1: {}'.format(target_q_next_1))
             # print('target_q_next_2: {}'.format(target_q_next_2))
             # print('target_q_next: {}'.format(target_q_next))
             
-            current_q_1 = tf.squeeze(self.critic_main_1(tf.concat([state_tf,action_tf], 1)), 1)
-            current_q_2 = tf.squeeze(self.critic_main_2(tf.concat([state_tf,action_tf], 1)), 1)
+            current_q_1 = tf.squeeze(self.soft_q_main_1(tf.concat([state_tf,action_tf], 1)), 1)
+            current_q_2 = tf.squeeze(self.soft_q_main_2(tf.concat([state_tf,action_tf], 1)), 1)
             # print('current_q_1: {}'.format(current_q_1))
             # print('current_q_2: {}'.format(current_q_2))
             
@@ -361,18 +357,16 @@ class Agent:
     def load_models(self, path):
         print('Load Model Path : ', path)
         self.actor_main.load_weights(path, "_actor_main")
-        self.actor_target.load_weights(path, "_actor_target")
-        self.critic_main_1.load_weights(path, "_critic_main_1")
-        self.critic_main_2.load_weights(path, "_critic_main_2")
-        self.critic_target_1.load_weights(path, "_critic_target_1")
-        self.critic_target_2.load_weights(path, "_critic_target_2")
+        self.soft_q_main_1.load_weights(path, "_critic_main_1")
+        self.soft_q_main_2.load_weights(path, "_soft_q_main_2")
+        self.soft_q_target_1.load_weights(path, "_soft_q_target_1")
+        self.soft_q_target_2.load_weights(path, "_soft_q_target_2")
 
     def save_models(self, path, score):
         save_path = str(path) + "score_" + str(score) + "_model"
         print('Save Model Path : ', save_path)
         self.actor_main.save_weights(save_path, "_actor")
-        self.actor_target.save_weights(save_path, "_actor_target")
-        self.critic_main_1.save_weights(save_path, "_critic_main_1")
-        self.critic_main_2.save_weights(save_path, "_critic_main_2")
-        self.critic_target_1.save_weights(save_path, "_critic_target_1")
-        self.critic_target_2.save_weights(save_path, "_critic_target_2")
+        self.soft_q_main_1.save_weights(save_path, "_critic_main_1")
+        self.soft_q_main_2.save_weights(save_path, "_soft_q_main_2")
+        self.soft_q_target_1.save_weights(save_path, "_soft_q_target_1")
+        self.soft_q_target_2.save_weights(save_path, "_soft_q_target_2")
