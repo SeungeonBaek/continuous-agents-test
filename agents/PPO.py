@@ -20,14 +20,14 @@ tf.executing_eagerly()
 class Actor(Model):
     def __init__(self, obs_space, action_space):
         super(Actor,self).__init__()
-        self.initializer = initializers.he_normal()
+        self.initializer = initializers.orthogonal()
         self.regularizer = regularizers.l2(l=0.001)
 
-        self.l1 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(256, activation = 'tanh', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
-        self.l2 = Dense(256, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2 = Dense(256, activation = 'tanh', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2_ln = LayerNormalization(axis=-1)
-        self.l3 = Dense(64, activation = 'relu', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l3 = Dense(64, activation = 'tanh', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
         self.mu = Dense(action_space, activation='tanh')
         self.std = Dense(action_space, activation='softplus')
@@ -45,14 +45,14 @@ class Actor(Model):
 class Critic(Model):
     def __init__(self):
         super(Critic,self).__init__()
-        self.initializer = initializers.he_normal()
+        self.initializer = initializers.orthogonal()
         self.regularizer = regularizers.l2(l=0.001)
         
-        self.l1 = Dense(256, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(256, activation = 'tanh' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
-        self.l2 = Dense(256, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2 = Dense(256, activation = 'tanh' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2_ln = LayerNormalization(axis=-1)
-        self.l3 = Dense(64, activation = 'relu' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l3 = Dense(64, activation = 'tanh' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
         self.value = Dense(1, activation = None)
 
@@ -185,7 +185,7 @@ class Agent:
         # print(f'mu, std_ : {mu.shape}, {std_.shape}')
         # print(f'action : {action.shape}')
 
-        log_prob = tf.squeeze(tf.clip_by_value(dist.log_prob(action)[..., tf.newaxis], self.log_prob_min, self.log_prob_max), axis=-1)
+        log_prob = tf.clip_by_value(dist.log_prob(action), self.log_prob_min, self.log_prob_max)
         # print(f'log_prob : {log_prob.shape}')
         log_prob = tf.reduce_sum(log_prob, axis=1, keepdims=False)
         # print(f'log_prob : {log_prob.shape}')
@@ -300,7 +300,7 @@ class Agent:
                 actions = tf.convert_to_tensor(batch_actions, dtype=tf.float32)
                 # print(f'actions : {actions.shape}')
 
-                log_policy = tf.squeeze(tf.clip_by_value(dist.log_prob(actions)[..., tf.newaxis], self.log_prob_min, self.log_prob_max))
+                log_policy = tf.clip_by_value(dist.log_prob(actions), self.log_prob_min, self.log_prob_max)
                 # print(f'log_policy : {log_policy.shape}')
                 log_policy = tf.reduce_sum(log_policy, 1, keepdims=False)
                 # print(f'log_policy : {log_policy.shape}')
