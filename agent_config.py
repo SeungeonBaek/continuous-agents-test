@@ -27,7 +27,7 @@ TD3_gSDE_agent_config['extension'] = {'name': 'gSDE', 'latent_space': 64, 'n_ste
 
 # PPO
 PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 1024, 'epoch_num': 40, \
-                            'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.999, 'entropy_coeff_min': 0.001, \
+                            'entropy_coeff': 0.1, 'entropy_coeff_reduction_rate': 0.9999, 'entropy_coeff_min': 0.001, \
                             'epsilon': 0.2, 'std_bound': [0.01, 0.3], 'lr_actor': 0.00015, 'lr_critic': 0.0003, 'reward_normalize' : True, \
                             'reward_min': -5, 'reward_max': 5, 'log_prob_min': -3.0, 'log_prob_max': 3.0}
 PPO_Vanilla_agent_config['extension'] = {'name': 'Vanilla', 'use_GAE': True, 'use_SIL': False}

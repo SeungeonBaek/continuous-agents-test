@@ -214,7 +214,7 @@ class Agent:
 
     def update(self):
         if self.replay_buffer._len() < self.total_batch_size:
-            return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            return False, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
         self.update_step += 1
 
@@ -244,6 +244,7 @@ class Agent:
                                       next_values=raw_next_values)
 
         # for logging
+        std_mem         = 0
         entropy_mem     = 0
         ratio_mem       = 0
         actor_loss_mem  = 0
@@ -331,6 +332,7 @@ class Agent:
             target_value = tf.reduce_mean(target_value).numpy()
             current_value = tf.reduce_mean(current_value).numpy()
 
+            std_mem += tf.reduce_mean(std).numpy() / self.epoch
             entropy_mem += entropy.numpy() / self.epoch
             ratio_mem += tf.reduce_mean(ratio).numpy() / self.epoch
             actor_loss_mem += actor_loss.numpy() / self.epoch
@@ -343,7 +345,7 @@ class Agent:
             if self.entropy_coeff < self.entropy_coeff_min:
                 self.entropy_coeff = self.entropy_coeff_min
 
-        return True, entropy_mem, ratio_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
+        return True, std_mem, entropy_mem, ratio_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
 
     def self_imitation_learning(self):
         if self.sil_buffer._len() < self.sil_batch_size:

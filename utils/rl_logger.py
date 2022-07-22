@@ -47,13 +47,13 @@ class RLLogger():
 
         elif self.agent_config['agent_name'] == 'PPO':
             if self.agent_config['extension']['name'] == 'MEPPO':
-                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+                updated, std, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
             elif self.agent_config['extension']['name'] == 'SIL':
-                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+                updated, std, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
             elif self.agent_config['extension']['name'] == 'gSDE':
-                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+                updated, std, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
             else:
-                updated, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
+                updated, std, entropy, ratio, actor_loss, advantage, target_val, critic_value, critic_loss = Agent.update()
 
         if self.agent_config['agent_name'] == 'DDPG':
             if updated:
@@ -76,6 +76,7 @@ class RLLogger():
                 self.summary_writer.add_scalar('02_Critic/Target_value', target_val, Agent.update_step)
                 self.summary_writer.add_scalar('02_Critic/Critic_value', critic_value, Agent.update_step)
                 self.summary_writer.add_scalar('03_Actor/Entropy', entropy, Agent.update_step)
+                self.summary_writer.add_scalar('03_Actor/Std_dev', std, Agent.update_step)
                 self.summary_writer.add_scalar('03_Actor/Ratio', ratio, Agent.update_step)
         elif self.agent_config['agent_name'] == 'SAC':
             if updated:
