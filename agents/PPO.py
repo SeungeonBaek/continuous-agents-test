@@ -21,13 +21,13 @@ class Actor(Model):
     def __init__(self, obs_space, action_space):
         super(Actor,self).__init__()
         self.initializer = initializers.orthogonal()
-        self.regularizer = regularizers.l2(l=0.001)
+        self.regularizer = regularizers.l2(l=0.0005)
 
-        self.l1 = Dense(256, activation = 'tanh', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(256, activation = 'swish', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
-        self.l2 = Dense(256, activation = 'tanh', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2 = Dense(256, activation = 'swish', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2_ln = LayerNormalization(axis=-1)
-        self.l3 = Dense(64, activation = 'tanh', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l3 = Dense(64, activation = 'swish', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
         self.mu = Dense(action_space, activation='tanh')
         self.std = Dense(action_space, activation='softplus')
@@ -46,13 +46,13 @@ class Critic(Model):
     def __init__(self):
         super(Critic,self).__init__()
         self.initializer = initializers.orthogonal()
-        self.regularizer = regularizers.l2(l=0.001)
+        self.regularizer = regularizers.l2(l=0.0005)
         
-        self.l1 = Dense(256, activation = 'tanh' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l1 = Dense(256, activation = 'swish' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l1_ln = LayerNormalization(axis=-1)
-        self.l2 = Dense(256, activation = 'tanh' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l2 = Dense(256, activation = 'swish' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l2_ln = LayerNormalization(axis=-1)
-        self.l3 = Dense(64, activation = 'tanh' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
+        self.l3 = Dense(64, activation = 'swish' , kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
         self.value = Dense(1, activation = None)
 
@@ -203,10 +203,7 @@ class Agent:
         for t in reversed(range(len(deltas) - 1)):
             gaes[t] = gaes[t] + (1 - dones[t]) * self.gamma * self.lamda * gaes[t + 1]
         
-        if gaes.std() >= 0:
-            gaes_norm = (gaes - gaes.mean()) / (gaes.std() + 1e-8)
-        else:
-            gaes_norm = (gaes - gaes.mean()) / (gaes.std() - 1e-8)
+        gaes_norm = (gaes - gaes.mean()) / (gaes.std() + 1e-8)
 
         if self.use_gae_norm:
             gaes = gaes_norm
@@ -292,7 +289,7 @@ class Agent:
                 mu, std = self.actor(tf.convert_to_tensor(batch_states, dtype=tf.float32))
                 # print(f'mu : {mu.shape}, std : {std.shape}')
 
-                dist = tfp.distributions.Normal(loc = mu, scale = tfp.math.clip_by_value_preserve_gradient(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
+                dist = tfp.distributions.Normal(loc = mu, scale = tf.clip_by_value(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
 
                 entropy = tf.reduce_mean(dist.entropy())
                 # print(f'entropy : {entropy.shape}')
@@ -341,10 +338,10 @@ class Agent:
             target_val_mem += target_value / self.epoch
             current_val_mem += current_value / self.epoch
             critic_loss_mem += critic_loss.numpy() / self.epoch
-            
-        self.entropy_coeff *= self.entropy_coeff_reduction_rate
-        if self.entropy_coeff < self.entropy_coeff_min:
-            self.entropy_coeff = self.entropy_coeff_min
+
+            self.entropy_coeff *= self.entropy_coeff_reduction_rate
+            if self.entropy_coeff < self.entropy_coeff_min:
+                self.entropy_coeff = self.entropy_coeff_min
 
         return True, entropy_mem, ratio_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
 
@@ -447,14 +444,14 @@ class Agent:
 
     def save_xp(self, state, next_state, reward, action, log_policy, done):
         # Store transition in the replay buffer.
-        self.replay_buffer.add((state, next_state, reward / 50, action, log_policy, done))
+        self.replay_buffer.add((state, next_state, reward / 20, action, log_policy, done))
 
         # Store trajectory in the sil_replay buffer via update_buffer function
         if self.extension_config['use_SIL']:
             if done == False:
                 self.trajectory['state'].append(state)
                 self.trajectory['action'].append(action)
-                self.trajectory['reward'].append(reward / 50) # Todo
+                self.trajectory['reward'].append(reward / 20) # Todo
                 self.trajectory['done'].append(done)
 
             else:
