@@ -161,6 +161,17 @@ class RLLogger():
 
     def episode_logging_tensorboard(self, Agent, episode_score, episode_step, episode_num, episode_rewards):
         if self.agent_config['agent_name'] == 'PPO':
+            Agent.entropy_coeff *= Agent.entropy_coeff_reduction_rate
+            Agent.std_bound[1] *= Agent.std_reduction_rate
+
+            if Agent.entropy_coeff < Agent.entropy_coeff_min:
+                Agent.entropy_coeff = Agent.entropy_coeff_min
+            if Agent.std_bound[1] < Agent.std_min:
+                Agent.std_bound[1] = Agent.std_min
+
+            self.summary_writer.add_scalar('03_Actor/Entropy_coeff', Agent.entropy_coeff, episode_num)
+            self.summary_writer.add_scalar('03_Actor/Std_max', Agent.std_bound[1], episode_num)
+
             if self.agent_config['extension']['name'] == 'SIL':
                 Agent.return_criteria = ((episode_num -1) / episode_num) * Agent.return_criteria + (1 / episode_num) * episode_score
                 for _ in range(Agent.sil_epoch):

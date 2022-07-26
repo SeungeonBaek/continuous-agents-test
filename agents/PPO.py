@@ -30,16 +30,16 @@ class Actor(Model):
         self.l3 = Dense(64, activation = 'swish', kernel_initializer=self.initializer, kernel_regularizer=self.regularizer)
         self.l3_ln = LayerNormalization(axis=-1)
         self.mu = Dense(action_space, activation='tanh')
-        self.std = Dense(action_space, activation='softplus')
+        self.log_std = Dense(action_space, activation='tanh')
 
     def call(self, state):
         l1 = self.l1_ln(self.l1(state))
         l2 = self.l2_ln(self.l2(l1))
         l3 = self.l3_ln(self.l3(l2))
         mu = self.mu(l3)
-        std = self.std(l3)
+        log_std = self.log_std(l3)
 
-        return mu, std
+        return mu, log_std
 
 
 class Critic(Model):
@@ -125,7 +125,9 @@ class Agent:
         self.entropy_coeff_min = self.agent_config['entropy_coeff_min']
         self.epsilon = self.agent_config['epsilon']
 
-        self.std_bound = self.agent_config['std_bound']
+        self.std_bound  = self.agent_config['std_bound']
+        self.std_min    = self.agent_config['std_min']
+        self.std_reduction_rate = self.agent_config['std_reduction_rate']
 
         self.reward_min = self.agent_config['reward_min']
         self.reward_max = self.agent_config['reward_max']
@@ -177,8 +179,8 @@ class Agent:
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
 
-        mu, std_ = self.actor(obs)
-        std = tf.clip_by_value(std_, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1])
+        mu, log_std = self.actor(obs)
+        std = tf.clip_by_value(tf.exp(log_std), clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1])
         dist = tfp.distributions.Normal(loc=mu, scale=std)
         action = dist.sample()
         # print(f'in action, obs : {obs.shape}')
@@ -287,7 +289,8 @@ class Agent:
             actor_variable = self.actor.trainable_variables   
             with tf.GradientTape() as tape:
                 tape.watch(actor_variable)
-                mu, std = self.actor(tf.convert_to_tensor(batch_states, dtype=tf.float32))
+                mu, log_std = self.actor(tf.convert_to_tensor(batch_states, dtype=tf.float32))
+                std = tf.exp(log_std)
                 # print(f'mu : {mu.shape}, std : {std.shape}')
 
                 dist = tfp.distributions.Normal(loc = mu, scale = tf.clip_by_value(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
@@ -340,10 +343,6 @@ class Agent:
             target_val_mem += target_value / self.epoch
             current_val_mem += current_value / self.epoch
             critic_loss_mem += critic_loss.numpy() / self.epoch
-
-            self.entropy_coeff *= self.entropy_coeff_reduction_rate
-            if self.entropy_coeff < self.entropy_coeff_min:
-                self.entropy_coeff = self.entropy_coeff_min
 
         return True, std_mem, entropy_mem, ratio_mem, actor_loss_mem, adv_mem, target_val_mem, current_val_mem, critic_loss_mem
 
@@ -446,14 +445,14 @@ class Agent:
 
     def save_xp(self, state, next_state, reward, action, log_policy, done):
         # Store transition in the replay buffer.
-        self.replay_buffer.add((state, next_state, reward / 20, action, log_policy, done))
+        self.replay_buffer.add((state, next_state, reward / 10, action, log_policy, done))
 
         # Store trajectory in the sil_replay buffer via update_buffer function
         if self.extension_config['use_SIL']:
             if done == False:
                 self.trajectory['state'].append(state)
                 self.trajectory['action'].append(action)
-                self.trajectory['reward'].append(reward / 20) # Todo
+                self.trajectory['reward'].append(reward / 10) # Todo
                 self.trajectory['done'].append(done)
 
             else:
