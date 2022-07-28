@@ -26,12 +26,12 @@ TD3_gSDE_agent_config = {'agent_name': 'TD3', 'gamma' : 0.99, 'tau': 0.005, 'upd
 TD3_gSDE_agent_config['extension'] = {'name': 'gSDE', 'latent_space': 64, 'n_step_reset': 16}
 
 # PPO
-PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 1024, 'batch_size': 256, 'epoch_num': 10, \
-                            'entropy_coeff': 0.02, 'entropy_coeff_reduction_rate': 0.9995, 'entropy_coeff_min': 0.00001, 'epsilon': 0.2, \
-                            'std_bound': [0.01, 0.3], 'std_reduction_rate': 0.9999, 'std_min': 0.15, 'lr_actor': 0.00005, 'lr_critic': 0.00010, \
+PPO_Vanilla_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 1024, 'batch_size': 256, 'epoch_num': 20, \
+                            'entropy_coeff': 0.001, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.00005, 'epsilon': 0.2, \
+                            'std_bound': [0.01, 0.3], 'std_reduction_rate': 1, 'std_min': 0.25, 'lr_actor': 0.000075, 'lr_critic': 0.00015, \
                             'reward_normalize' : True, 'reward_min': -5, 'reward_max': 5, 'log_prob_min': -3.5, 'log_prob_max': 3.5}
 PPO_Vanilla_agent_config['extension'] = {'name': 'Vanilla', 'use_GAE': True, 'use_SIL': False}
-PPO_Vanilla_agent_config['extension']['GAE_config'] = {'use_gae_norm': False, 'lambda': 0.98}
+PPO_Vanilla_agent_config['extension']['GAE_config'] = {'use_gae_norm': False, 'lambda': 0.98} # std_reduction is not good....
 
 ME_PPO_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 512, 'batch_size': 128, 'epoch_num': 4, \
                             'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.0005, \
@@ -41,14 +41,15 @@ ME_PPO_agent_config['extension'] = {'name': 'ME', 'use_GAE': True, 'use_ME': Tru
 ME_PPO_agent_config['extension']['GAE_config'] = {'use_gae_norm': True, 'lambda': 0.95}
 ME_PPO_agent_config['extension']['ME_config'] = {}
 
-PPO_SIL_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 1024, 'epoch_num': 40, \
-                            'entropy_coeff': 0.1, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.001, \
-                            'epsilon': 0.2, 'std_bound': [0.01, 0.5], 'lr_actor': 0.00001, 'lr_critic': 0.002, 'reward_normalize' : True, \
-                            'reward_min': -15, 'reward_max': 15, 'log_prob_min': -3.0, 'log_prob_max': 3.0}
+PPO_SIL_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 1024, 'batch_size': 256, 'epoch_num': 20, \
+                            'entropy_coeff': 0.001, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.00005, 'epsilon': 0.2, \
+                            'std_bound': [0.01, 0.3], 'std_reduction_rate': 1, 'std_min': 0.25, 'lr_actor': 0.000075, 'lr_critic': 0.00015, \
+                            'reward_normalize' : True, 'reward_min': -5, 'reward_max': 5, 'log_prob_min': -3.5, 'log_prob_max': 3.5}
 PPO_SIL_agent_config['extension'] = {'name': 'SIL', 'use_GAE': True, 'use_SIL': True}
 PPO_SIL_agent_config['extension']['GAE_config'] = {'use_gae_norm': False, 'lambda': 0.97}
-PPO_SIL_agent_config['extension']['SIL_config'] = {'buffer_size': 500000, 'batch_size': 512, 'lr_sil_actor': 0.0001, 'epoch_num': 10, 
-                                                   'lr_sil_critic': 0.0002, 'return_criteria': 0, 'log_prob_min': -3, 'log_prob_max': 3}
+PPO_SIL_agent_config['extension']['SIL_config'] = {'buffer_size': 200000, 'min_batch_size': 64, 'batch_size': 512, 'lr_sil_actor': 0.0005, 'lr_sil_critic': 0.0001,
+                                                   'epoch_num': 10, 'return_criteria': 0, 'naive_criteria': False, 'recent_return_coeff' : 0.9,
+                                                   'log_prob_min': -3, 'log_prob_max': 3, 'adv_min': -1, 'adv_max': 1}
 
 PPO_gSDE_agent_config = {'agent_name': 'PPO', 'gamma' : 0.99, 'total_batch_size': 2048, 'batch_size': 512, 'epoch_num': 10, \
                             'entropy_coeff': 0.01, 'entropy_coeff_reduction_rate': 0.9997, 'entropy_coeff_min': 0.0005, \

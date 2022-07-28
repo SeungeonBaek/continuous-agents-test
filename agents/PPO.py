@@ -163,10 +163,14 @@ class Agent:
 
             self.sil_buffer = SILExperienceMemory(self.sil_config['buffer_size'], 0.6, 0.1)
             self.sil_batch_size = self.sil_config['batch_size']
+            self.sil_min_batch_size = self.sil_config['min_batch_size']
             self.sil_epoch = self.sil_config['epoch_num']
 
             self.sil_log_prob_min = self.sil_config['log_prob_min']
             self.sil_log_prob_max = self.sil_config['log_prob_min']
+
+            self.sil_adv_min = self.sil_config['adv_min']
+            self.sil_adv_max = self.sil_config['adv_max']
 
             self.sil_lr_actor = self.sil_config['lr_sil_actor']
             self.sil_actor_opt = Adam(learning_rate=self.sil_lr_actor)
@@ -175,6 +179,8 @@ class Agent:
             self.sil_critic_opt = Adam(learning_rate=self.sil_lr_critic)
 
             self.return_criteria = self.sil_config['return_criteria']
+            self.naive_criteria = self.sil_config['naive_criteria']
+            self.recent_return_coeff = self.sil_config['recent_return_coeff']
 
     def action(self, obs):
         obs = tf.convert_to_tensor([obs], dtype=tf.float32)
@@ -382,13 +388,13 @@ class Agent:
 
             mask = tf.where(returns - current_value > 0.0, tf.ones_like(returns), tf.zeros_like(returns)) # train_adv가 0보다 크면 1, 아니면 0으로 채워진 train_adv와 같은 형태의 mask 선언
             # print(f'mask : {mask.shape}')
-            num_samples = tf.maximum(tf.reduce_sum(mask), 64) # Todo
+            num_samples = tf.maximum(tf.reduce_sum(mask), self.sil_min_batch_size) # Todo
             # print(f'num_samples : {num_samples.shape}')
 
             # print('sil run')
-            advs = tf.reduce_sum(tf.stop_gradient(tf.clip_by_value(returns - current_value, 0, 1))) / num_samples # Todo
+            advs = tf.reduce_sum(tf.stop_gradient(tf.clip_by_value(returns - current_value, 0, self.sil_adv_max))) / num_samples # Todo
             # print(f'advs : {advs.shape}')
-            delta = tf.stop_gradient(tf.multiply(tf.clip_by_value(current_value - returns, -1, 0), mask))
+            delta = tf.stop_gradient(tf.multiply(tf.clip_by_value(current_value - returns, self.sil_adv_min, 0), mask))
             # print(f'delta : {delta.shape}')
 
             sil_value_error = tf.multiply(tf.multiply(delta, weights), current_value)
@@ -400,7 +406,8 @@ class Agent:
             mu, std = self.actor(states)
             # print(f'mu : {mu.shape}, std : {std.shape}')
 
-            dist = tfp.distributions.Normal(loc = mu, scale = tfp.math.clip_by_value_preserve_gradient(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
+            # dist = tfp.distributions.Normal(loc = mu, scale = tfp.math.clip_by_value_preserve_gradient(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
+            dist = tfp.distributions.Normal(loc = mu, scale = tf.clip_by_value(std, clip_value_min=self.std_bound[0], clip_value_max=self.std_bound[1]))
 
             entropy_raw = tf.reduce_mean(dist.entropy(), 1, keepdims=False)
             entropy_weight = tf.multiply(tf.multiply(weights, entropy_raw), mask)
@@ -409,8 +416,9 @@ class Agent:
             # print(f'entropy_weight : {entropy_weight.shape}')
             # print(f'entropy : {entropy.shape}')
 
-            log_policy = tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
-            clipped_log_policy = tf.math.add(tf.stop_gradient(tf.minimum(log_policy, self.sil_log_prob_max)), log_policy)
+            log_policy = -tf.reduce_mean(dist.log_prob(actions), 1, keepdims=False)
+            # clipped_log_policy = tf.minimum(log_policy, self.sil_log_prob_max) # https://github.com/TianhongDai/self-imitation-learning-pytorch
+            clipped_log_policy = tf.math.add(tf.stop_gradient(tf.minimum(log_policy, self.sil_log_prob_max) - log_policy), log_policy) # https://github.com/junhyukoh/self-imitation-learning
 
             # print(f'log_policy : {log_policy.shape}')
             # print(f'clipped_log_policy : {clipped_log_policy.shape}')
@@ -452,7 +460,7 @@ class Agent:
             if done == False:
                 self.trajectory['state'].append(state)
                 self.trajectory['action'].append(action)
-                self.trajectory['reward'].append(reward / 10) # Todo
+                self.trajectory['reward'].append(reward)
                 self.trajectory['done'].append(done)
 
             else:

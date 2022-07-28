@@ -173,7 +173,10 @@ class RLLogger():
             self.summary_writer.add_scalar('03_Actor/Std_max', Agent.std_bound[1], episode_num)
 
             if self.agent_config['extension']['name'] == 'SIL':
-                Agent.return_criteria = ((episode_num -1) / episode_num) * Agent.return_criteria + (1 / episode_num) * episode_score
+                if Agent.naive_criteria:
+                    Agent.return_criteria = ((episode_num -1) / episode_num) * Agent.return_criteria + (1 / episode_num) * episode_score
+                else:
+                    Agent.return_criteria = (1 - Agent.recent_return_coeff) * Agent.return_criteria + Agent.recent_return_coeff * episode_score
                 for _ in range(Agent.sil_epoch):
                     sil_updated, sil_entropy, sil_actor_loss, sil_adv, sil_target_return, sil_critic_value, sil_critic_loss = Agent.self_imitation_learning()
                     if sil_updated:
@@ -183,6 +186,7 @@ class RLLogger():
                         self.summary_writer.add_scalar('02_Critic/Target_return_SIL', sil_target_return, Agent.sil_update_step)
                         self.summary_writer.add_scalar('02_Critic/Critic_value_SIL', sil_critic_value, Agent.sil_update_step)
                         self.summary_writer.add_scalar('03_Actor/Entropy_SIL', sil_entropy, Agent.sil_update_step)
+                        self.summary_writer.add_scalar('03_Actor/Return_Criteria_SIL', Agent.return_criteria, Agent.sil_update_step)
         self.summary_writer.add_scalar('00_Episode/Score', episode_score, episode_num)
         self.summary_writer.add_scalar('00_Episode/Average_reward', episode_score/episode_step, episode_num)
         self.summary_writer.add_scalar('00_Episode/Steps', episode_step, episode_num)

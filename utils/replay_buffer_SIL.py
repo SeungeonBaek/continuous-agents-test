@@ -13,9 +13,9 @@ class SILExperienceMemory:
         self.capacity = capacity
         self.e = 0.01
         self.alpha = alpha
-        self.alpha_decretement_per_sampling = 0.0001
+        self.alpha_decretement_per_sampling = 1e-8
         self.beta = beta
-        self.beta_increment_per_sampling = 0.0001
+        self.beta_increment_per_sampling = 1e-8
 
     # get priority from TD error in memory
     def _get_priority(self, error:float) -> float:
