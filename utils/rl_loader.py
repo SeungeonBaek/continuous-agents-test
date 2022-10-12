@@ -22,7 +22,6 @@ class RLLoader():
 
         return env, obs_space, act_space
 
-
     def agent_loader(self):
         if self.agent_config['agent_name'] == 'DDPG':
             if self.agent_config['extension']['name'] == 'TQC':

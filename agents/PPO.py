@@ -498,6 +498,7 @@ class Agent:
 
         for reward, done in zip(rewards[::-1], dones[::-1]):
             if self.agent_config['reward_normalize']:
+                reward = reward / 10
                 reward = np.clip(reward, self.reward_min, self.reward_max)
 
             r = reward + gamma * r * (1. - done)
