@@ -638,8 +638,8 @@ class Agent:
             # tf.debugging.check_numerics(td_loss_1, message='td_loss_1 is not numeric')
             # tf.debugging.check_numerics(td_loss_2, message='td_loss_2 is not numeric')
 
-            huber_loss_1 = tf.where(tf.less(td_loss_1, 1.0), 1/2 * tf.math.square(td_loss_1), 1.0 * tf.abs(td_loss_1 - 1.0 * 1/2))
-            huber_loss_2 = tf.where(tf.less(td_loss_2, 1.0), 1/2 * tf.math.square(td_loss_2), 1.0 * tf.abs(td_loss_2 - 1.0 * 1/2))
+            huber_loss_1 = tf.where(tf.less(tf.math.abs(td_loss_1), 1.0), 1/2 * tf.math.square(td_loss_1), 1.0 * tf.abs(td_loss_1) - 1.0 * 1/2)
+            huber_loss_2 = tf.where(tf.less(tf.math.abs(td_loss_2), 1.0), 1/2 * tf.math.square(td_loss_2), 1.0 * tf.abs(td_loss_2) - 1.0 * 1/2)
             # print(f'in QR Loss, huber_loss: {huber_loss_1.shape}, {huber_loss_2.shape}')
             # tf.debugging.check_numerics(huber_loss_1, message='huber_loss_1 is not numeric')
             # tf.debugging.check_numerics(huber_loss_2, message='huber_loss_2 is not numeric')
